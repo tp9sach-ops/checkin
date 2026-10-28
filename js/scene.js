@@ -4,6 +4,7 @@
    Mọi chỗ có thể chỉnh nằm ở 3 khối đầu: SCENES, CAM, HOT
    [v5 — sửa giật/lag/lóa] xem mục 'V5' trong HANDOFF.md. Thêm ?perf=1 vào URL để hiện bảng FPS.
    [v6 — cổng chọn Trẻ / Có tuổi + nút 'Xem dạng danh sách' ở cuối] xem mục 'GATE' bên dưới (buildGate).
+   [v8 — cảnh luôn sống: gió lay cây, lá rơi, hổ thở, camera nhún theo chuột; cổng chọn đổi chữ hài hước, nút nhỏ trong suốt, đặt cao hơn (khối V8: WIND)]
    [v7 — hiệu ứng khi mở trang liên kết (xem khối V7: FXD)]
    [v6.1 — chống lỗi không thấy cổng: bọc buildGate bằng try/catch + log console; thêm World.version; index.html nạp scene.js kèm ?v=6.1 để khỏi dính cache]
    ========================================================================== */
@@ -163,8 +164,9 @@ function tree(x, z, k, seed) {                                                  
   const top = [.1, 3.1, .05];
   limb(g, bk, [0, .1, 0], top, .3, .15).castShadow = !LOW;
   [[-1.3, 4.3, .4], [1.2, 4.5, -.5], [.3, 4.7, 1.2], [-.4, 4.4, -1.2]].forEach(b => limb(g, bk, top, b, .13, .05));
+  const TR = { g, k, ry: g.rotation.y, blobs: [], exc: 0 }; TREES.push(TR);                                  // V8: gió lay tán lá
   const blob = (px, py, pz, s) => {
-    const m = new THREE.Mesh(F.geos[(r() * 3) | 0], F.mat); m.position.set(px, py, pz);
+    const m = new THREE.Mesh(F.geos[(r() * 3) | 0], F.mat); m.position.set(px, py, pz); TR.blobs.push({ m, p0: m.position.clone(), ph: r() * 6.28, rz: 0 });
     m.scale.set(s * (1 + r() * .2), s * (.85 + r() * .2), s * (1 + r() * .2)); m.rotation.y = r() * 6.28; m.castShadow = !LOW; g.add(m);
   };
   blob(0, 4.9, 0, 1.9);
@@ -243,7 +245,7 @@ let posC, lookC, maxScroll = 1, target = 0, sp = 0, keepP = 0, raf = 0, last = 0
 const HOTS = [], LIVE = {}, dots = [];
 let slideL, slideR, khoL, khoR, altarLight, hover = null, active = null, fly = null, needRay = false, ptrXY = null, lastTouch = false;
 const API = { ready: false };
-let fx = null; const FXO = {};            // V7: hiệu ứng đang chạy + tham chiếu các bộ phận động (xem khối V7 bên dưới)
+let fx = null; const FXO = {}; const TREES = [];            // V7: hiệu ứng đang chạy + tham chiếu các bộ phận động (xem khối V7 bên dưới)
 window.World = API;
 
 /* ============================ ĐỒ HỌA ============================ */
@@ -385,7 +387,7 @@ function stageTiger() {                                                       //
   [[0, 1.19, 2.36, .05, .05], [0, -1.19, 2.36, .05, .05]].forEach(a => B(Z, M.led, [a[2], a[3], a[4]], [a[0], .36, a[1]]));
   [[1.19, 0], [-1.19, 0]].forEach(a => B(Z, M.led, [.05, .05, 2.36], [a[0], .36, a[1]]));
   B(Z, gold, [1.5, .42, .06], [0, .66, 1.17]); P(Z, textMat('9 SẠCH', 1.3 / .3, '#6b3f06'), [1.3, .3], [0, .66, 1.205]);
-  const T = new THREE.Group(); T.position.y = 1.06; Z.add(T);
+  const T = new THREE.Group(); T.position.y = 1.06; Z.add(T); FXO.tiger = T;
   // chân, bàn chân, thân, bụng
   [-1, 1].forEach(sx => {
     C(T, gold, [.36, .6, .36], [sx * .32, .46, 0]); S(T, gold, [.52, .22, .66], [sx * .32, .11, .08]);
@@ -1066,6 +1068,60 @@ function endFx() {
 }
 function abortFx() { if (fx) endFx(); }
 
+/* ==========================================================================
+   V8: CẢNH LUÔN "SỐNG" — gió lay cây, lá rơi, hổ vàng thở, camera nhún theo chuột (kể cả khi hộp chọn đang mở)
+   - Gió: WIND.gust (0..1.6) tăng khi rê chuột qua nút/cây/hổ rồi tự giảm; TREES = các cây ven đường (mỗi cây có tán lá lay riêng).
+   - Rê chuột lên cây hoặc tượng hổ (theo vị trí trên màn hình) => cây/hổ lay mạnh hơn; chuột lướt nhanh thì lay mạnh hơn.
+   - Lá rơi: 10 lá nhỏ (InstancedMesh) bay theo gió quanh 2 cây gần cửa hàng.
+   - Camera: nhún theo chuột rất nhẹ (tối đa ~1.2°) + thở chậm; tắt khi đang chạy hiệu ứng mở trang.
+   Chỉnh nhanh: WIND_STRENGTH (độ mạnh gió chung), PARALLAX (độ nhún camera, 0 = tắt), LEAVES (số lá, 0 = tắt).
+   Người dùng bật "giảm chuyển động" của hệ điều hành => tắt hết (REDUCE). Vật động cần mw() vì scene.matrixWorldAutoUpdate = false. ========================================================================== */
+const WIND_STRENGTH = 1, PARALLAX = 1, LEAVES = 10;
+const REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const WIND = { gust: 0, spd: 0, tiger: 0, ptr: { x: 0, y: 0, has: false }, par: { x: 0, y: 0 }, leaves: null, lv: [] };
+function poke(a) { WIND.gust = Math.min(1.6, Math.max(WIND.gust, a)); WIND.tiger = Math.min(1, WIND.tiger + .6); }
+function windInit() {
+  if (REDUCE || !LEAVES) return;
+  const m = std(0x4fa84a, { roughness: .8, side: THREE.DoubleSide }), im = new THREE.InstancedMesh(new THREE.PlaneGeometry(.16, .1), m, LEAVES); im.frustumCulled = false; scene.add(im); WIND.leaves = im;
+  for (let i = 0; i < LEAVES; i++) WIND.lv.push({ x: 0, y: -5, z: 0, rx: Math.random() * 6, ry: Math.random() * 6, sp: R(.3, .7), t: Math.random() * 6 });
+}
+function respawnLeaf(L) { const T = TREES[(Math.random() * Math.min(2, TREES.length)) | 0]; if (!T) return; L.x = T.g.position.x + R(-1.6, 1.6); L.y = R(3.8, 6); L.z = T.g.position.z + R(-1.6, 1.6); L.sp = R(.3, .7); }
+const _d = new THREE.Object3D();
+function ambientCam(now, dt) {                                               // camera nhún nhẹ theo chuột + thở chậm
+  if (REDUCE || !PARALLAX) return; const t = now / 1000, P = WIND.ptr, k = 1 - Math.exp(-dt * 3), f = fx ? 0 : PARALLAX;
+  const nx = P.has ? P.x / W * 2 - 1 : 0, ny = P.has ? -(P.y / H * 2 - 1) : 0; WIND.par.x += (nx - WIND.par.x) * k; WIND.par.y += (ny - WIND.par.y) * k;
+  camera.rotation.y += (-WIND.par.x * .02 + Math.sin(t * .37) * .004) * f; camera.rotation.x += (WIND.par.y * .012 + Math.sin(t * .5) * .003) * f;
+}
+function hitPtr(wx, wy, wz, R2) { if (!WIND.ptr.has) return false; _v.set(wx, wy, wz).applyMatrix4(camera.matrixWorldInverse); if (_v.z > -.5) return false; _v.set(wx, wy, wz).project(camera); return Math.hypot((_v.x * .5 + .5) * W - WIND.ptr.x, (-_v.y * .5 + .5) * H - WIND.ptr.y) < R2 * H; }
+function windStep(now, dt) {
+  if (REDUCE) return; const t = now / 1000, ws = WIND_STRENGTH; WIND.spd *= Math.exp(-dt * 6); WIND.gust = Math.max(0, WIND.gust - dt * .6); WIND.tiger = Math.max(0, WIND.tiger - dt * .7);
+  const gl = (.55 + .25 * Math.sin(t * .35) + WIND.gust * 1.6) * ws, sw = Math.sin(t * 1.15) * .6 + Math.sin(t * 2.7 + 1.3) * .25, mv = Math.min(1, .3 + WIND.spd * .004);
+  TREES.forEach(T => {
+    const p = T.g.position, hit = hitPtr(p.x, 5 * T.k, p.z, Math.abs(p.x) < 20 ? .2 : .1), tg = hit ? mv : 0;
+    T.exc += (tg - T.exc) * (1 - Math.exp(-dt * (tg > T.exc ? 6 : 1.2)));
+    const cs = Math.cos(T.ry), sn = Math.sin(T.ry), ex = 1 + T.exc * 2.4, wx = 1, wz = .35;
+    T.blobs.forEach(b => {
+      const h = Math.max(0, (b.p0.y - 3) / 3) + .35, w1 = Math.sin(t * 1.7 + b.ph), w2 = Math.sin(t * 3.3 + b.ph * 1.7);
+      const a = (sw * .07 + w1 * .03 + w2 * .014) * h * ex * gl / T.k, ox = a * wx, oz = a * wz;
+      b.m.position.set(b.p0.x + ox * cs - oz * sn, b.p0.y + w2 * .012 * gl * h, b.p0.z + ox * sn + oz * cs); b.m.rotation.z = (w1 * .06 + sw * .04) * gl * ex * .6;
+    });
+    T.g.updateMatrixWorld(true);
+  });
+  const Tg = FXO.tiger;                                                           // hổ vàng thở nhẹ; rê chuột / bấm nút thì lắc người
+  if (Tg) {
+    const hv = hitPtr(5.6, 3.3, 6.4, .16); if (hv) WIND.tiger = Math.max(WIND.tiger, Math.min(1, .35 + WIND.spd * .004));
+    const e = WIND.tiger; Tg.position.y = 1.06 + Math.sin(t * 1.8) * .012 + e * Math.abs(Math.sin(t * 9)) * .035; Tg.rotation.y = Math.sin(t * .7) * .025 + e * Math.sin(t * 8) * .09; Tg.rotation.z = Math.sin(t * 1.1 + 1) * .008 + e * Math.sin(t * 6) * .03; Tg.updateMatrixWorld(true);
+  }
+  if (WIND.leaves) {
+    WIND.lv.forEach((L, i) => {
+      if (L.y < .15 || L.y > 7) respawnLeaf(L);
+      L.t += dt; L.y -= L.sp * dt * (.8 + .3 * Math.sin(L.t * 2)); L.x += (.35 + sw * .25 + gl * .5) * dt * (.6 + .4 * Math.sin(L.t + i)); L.z += (.12 + Math.sin(L.t * 1.3 + i) * .2) * dt;
+      L.rx += dt * (1.5 + gl); L.ry += dt * 1.1; _d.position.set(L.x, L.y, L.z); _d.rotation.set(L.rx, L.ry, 0); _d.updateMatrix(); WIND.leaves.setMatrixAt(i, _d.matrix);
+    });
+    WIND.leaves.instanceMatrix.needsUpdate = true;
+  }
+}
+
 /* ============================ VÒNG LẶP ============================ */
 const tmpV2 = new THREE.Vector3();
 let doorO1 = -1, doorO2 = -1, yawC = 0, pitC = 0, lookInit = false;
@@ -1093,7 +1149,9 @@ function tick(now) {
       const fy = Math.atan2(-ex, -ez), fp = Math.atan2(ey, Math.hypot(ex, ez)); camera.rotation.set(pitC + (fp - pitC) * wv, yawC + Math.atan2(Math.sin(fy - yawC), Math.cos(fy - yawC)) * wv, 0); }
     else camera.rotation.set(pitC, yawC, 0);
   } else camera.rotation.set(pitC, yawC, 0);
+  ambientCam(now, dt);
   camera.updateMatrixWorld();
+  windStep(now, dt);
   // cửa kính trượt mở (13%..19%) và cửa kho mở (85%..90%) — chỉ cập nhật khi cửa thực sự đổi
   const o1 = sm((sp - .13) / .06), o2 = sm((sp - .85) / .05);
   if (Math.abs(o1 - doorO1) > 1e-4 || Math.abs(o2 - doorO2) > 1e-4) {
@@ -1195,7 +1253,7 @@ function sync() {
    - Cuối hành trình 3D (tiến độ > 95%) hiện nút "Xem bằng dạng danh sách".
    Chỉnh nhanh: LIST_CLASS (tên class danh sách), END_BTN_BOTTOM (khoảng cách nút tới đáy), chữ trong GATE_TXT. */
 const LIST_CLASS = 'lm', END_BTN_BOTTOM = '24px';
-const GATE_TXT = { title: 'Bạn là người…?', young: 'Trẻ', youngSub: 'Xem cửa hàng 3D', old: 'Có tuổi', oldSub: 'Xem dạng danh sách, chữ lớn dễ đọc', end: 'Xem bằng dạng danh sách' };
+const GATE_TXT = { title: 'Ê, bạn thuộc hệ nào?', sub: 'Chọn đại cũng được, đổi ý lúc nào cũng được', young: 'Hệ Lướt Nhanh', youngSub: 'Thích 3D, vào cửa hàng cái rẹt', youngIc: '⚡', old: 'Hệ Chill Chill', oldSub: 'Chữ to, danh sách rõ, khỏi lướt mỏi tay', oldIc: '🍵', end: 'Mỏi tay rồi? Xem dạng danh sách' };
 const UI = { gate: null, btn: null, open: false, prevOverflow: '', endK: '' };
 function enterList() { document.body.classList.add(LIST_CLASS); }               // index.html lo phần hiển thị danh sách; MutationObserver trong boot() sẽ tự dừng 3D
 function setGate(open) {
@@ -1207,24 +1265,34 @@ function buildGate() {
   if (UI.gate) return;
   const css = document.createElement('style'); css.id = 'v6css';
   css.textContent = `
-#agate{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:16px 16px max(20px,env(safe-area-inset-bottom));box-sizing:border-box;font-family:${FONT};
-  background:linear-gradient(to top,rgba(14,10,4,.78) 0%,rgba(14,10,4,.45) 38%,rgba(14,10,4,0) 70%);opacity:0;transition:opacity .45s ease}
+#agate{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:16px 16px calc(max(20px,env(safe-area-inset-bottom)) + clamp(90px,24vh,240px));box-sizing:border-box;font-family:${FONT};
+  background:linear-gradient(to top,rgba(14,10,4,.3) 0%,rgba(14,10,4,.1) 40%,rgba(14,10,4,0) 70%);opacity:0;transition:opacity .45s ease}
 #agate.in{opacity:1}#agate.out{opacity:0;pointer-events:none}#agate[hidden]{display:none}
-#agate .box{width:min(620px,100%);text-align:center;color:#fff}
-#agate h2{margin:0 0 14px;font-size:clamp(24px,5.4vw,34px);font-weight:800;text-shadow:0 2px 12px rgba(0,0,0,.6)}
-#agate .row{display:flex;gap:12px}
-#agate button{flex:1;min-height:74px;border:0;border-radius:18px;cursor:pointer;font:inherit;padding:10px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  box-shadow:0 8px 24px rgba(0,0,0,.35);transition:transform .15s}
-#agate button:active{transform:scale(.97)}#agate button:focus-visible{outline:4px solid #fff;outline-offset:3px}
-#agate .y{background:#F2B705;color:#2a1c00}#agate .o{background:#1f7a3a;color:#fff}
-#agate b{font-size:clamp(22px,5vw,28px);font-weight:800}#agate small{font-size:clamp(13px,3.3vw,15px);font-weight:600;opacity:.88}
+#agate .box{width:min(440px,100%);text-align:center;color:#fff}
+#agate h2{margin:0 0 3px;font-size:clamp(18px,4.2vw,24px);font-weight:800;text-shadow:0 2px 10px rgba(0,0,0,.75)}
+#agate p{margin:0 0 12px;font-size:clamp(12px,3vw,13.5px);font-weight:500;opacity:.92;text-shadow:0 1px 6px rgba(0,0,0,.75)}
+#agate .row{display:flex;gap:10px}
+#agate button{flex:1;min-height:56px;border:1.5px solid rgba(255,255,255,.55);border-radius:16px;cursor:pointer;font:inherit;color:#fff;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  background:rgba(255,255,255,.1);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);box-shadow:0 6px 18px rgba(0,0,0,.18);
+  transition:transform .25s cubic-bezier(.3,1.5,.5,1),background .25s,border-color .25s,box-shadow .25s;animation:aflt 3.6s ease-in-out infinite}
+#agate .o{animation-delay:-1.8s}
+#agate button:hover,#agate button:focus-visible{transform:translateY(-4px) scale(1.05);background:rgba(255,255,255,.22);border-color:#ffe08a;box-shadow:0 12px 26px rgba(0,0,0,.3),0 0 22px rgba(255,224,138,.45);outline:none}
+#agate button:active{transform:scale(.97)}
+#agate button:hover i,#agate button:focus-visible i{animation:awig .6s ease-in-out infinite}
+#agate i{font-style:normal;font-size:clamp(20px,4.6vw,24px);display:inline-block;line-height:1}
+#agate b{font-size:clamp(15px,3.6vw,18px);font-weight:800;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+#agate small{font-size:clamp(11px,2.8vw,12.5px);font-weight:600;opacity:.92;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+@keyframes aflt{0%,100%{translate:0 0}50%{translate:0 -3px}}
+@keyframes awig{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
+@media(prefers-reduced-motion:reduce){#agate button,#agate button:hover i{animation:none}}
 @media(max-width:480px){#agate .row{flex-direction:column}}
 #alist{position:fixed;left:50%;bottom:calc(${END_BTN_BOTTOM} + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:45;border:0;border-radius:999px;padding:16px 28px;cursor:pointer;
   font:800 clamp(17px,4.4vw,20px) ${FONT};background:#F2B705;color:#2a1c00;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;visibility:hidden;pointer-events:none;white-space:nowrap}
 #alist:focus-visible{outline:4px solid #fff;outline-offset:3px}`;
   document.head.appendChild(css);
   const g = document.createElement('div'); g.id = 'agate'; g.hidden = true; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true'); g.setAttribute('aria-label', GATE_TXT.title);
-  g.innerHTML = `<div class="box"><h2>${GATE_TXT.title}</h2><div class="row"><button type="button" class="y" data-k="y"><b>${GATE_TXT.young}</b><small>${GATE_TXT.youngSub}</small></button><button type="button" class="o" data-k="o"><b>${GATE_TXT.old}</b><small>${GATE_TXT.oldSub}</small></button></div></div>`;
+  g.innerHTML = `<div class="box"><h2>${GATE_TXT.title}</h2><p>${GATE_TXT.sub}</p><div class="row"><button type="button" class="y" data-k="y"><i>${GATE_TXT.youngIc}</i><b>${GATE_TXT.young}</b><small>${GATE_TXT.youngSub}</small></button><button type="button" class="o" data-k="o"><i>${GATE_TXT.oldIc}</i><b>${GATE_TXT.old}</b><small>${GATE_TXT.oldSub}</small></button></div></div>`;
+  g.addEventListener('pointerover', e => { const b = e.target.closest('button'); if (b) poke(b.dataset.k === 'y' ? 1.3 : .7); });   // rê chuột qua nút: gió nổi lên, hổ vàng lắc người
   g.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; setGate(false); if (b.dataset.k === 'o') enterList(); });
   document.body.appendChild(g); UI.gate = g;
   const b = document.createElement('button'); b.id = 'alist'; b.type = 'button'; b.textContent = '📋 ' + GATE_TXT.end; b.addEventListener('click', enterList);
@@ -1289,14 +1357,16 @@ async function boot() {
     if (pinned >= 0 && Math.abs(scroller.scrollTop / maxScroll - pinned) > .02) pinned = -1;
   }, { passive: true });
   scroller.addEventListener('click', e => { if (N.edit()) return; const mid = pickMid(e.clientX, e.clientY); if (mid) openMod(mid); else active = null; });
+  window.addEventListener('pointermove', e => { if (e.pointerType === 'touch') return; const P = WIND.ptr; if (P.has) WIND.spd += Math.hypot(e.clientX - P.x, e.clientY - P.y); P.x = e.clientX; P.y = e.clientY; P.has = true; }, { passive: true });
+  document.documentElement.addEventListener('mouseleave', () => { WIND.ptr.has = false; });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  fxInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
+  fxInit(); windInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   await wait(250); $('wload').classList.add('hide');
 }
 
-API.version = 'v7';
+API.version = 'v8';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
