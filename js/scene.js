@@ -262,10 +262,12 @@ function hot(mid, g, box) {
 function stageSky() {
   const sky = canvasTex(512, 512, (g, w, h) => {
     const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#2b3a5e'); gr.addColorStop(.3, '#6d5f7c'); gr.addColorStop(.46, '#d08c7a'); gr.addColorStop(.6, '#f7b46e'); gr.addColorStop(1, '#f9cf8f');
+    gr.addColorStop(0, '#1f3a6b'); gr.addColorStop(.2, '#4f5f93'); gr.addColorStop(.38, '#a96f8c'); gr.addColorStop(.5, '#ee9a74'); gr.addColorStop(.62, '#ffc17a'); gr.addColorStop(1, '#ffdca0');
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
     const glow = g.createRadialGradient(w * .22, h * .6, 4, w * .22, h * .6, w * .7); glow.addColorStop(0, 'rgba(255,236,190,.9)'); glow.addColorStop(.25, 'rgba(255,200,130,.45)'); glow.addColorStop(1, 'rgba(255,170,100,0)');
     g.fillStyle = glow; g.fillRect(0, 0, w, h);
+    const core = g.createRadialGradient(w * .22, h * .6, 0, w * .22, h * .6, w * .06); core.addColorStop(0, 'rgba(255,252,236,1)'); core.addColorStop(.5, 'rgba(255,236,190,.65)'); core.addColorStop(1, 'rgba(255,220,160,0)');   // đĩa mặt trời
+    g.fillStyle = core; g.fillRect(0, 0, w, h);
     const r = seeded(31); for (let i = 0; i < 26; i++) {                                           // mây vệt mềm
       const cx = r() * w, cy = h * (.14 + r() * .32), rw = 60 + r() * 150, rh = 5 + r() * 12, gg = g.createRadialGradient(cx, cy, 1, cx, cy, rw);
       gg.addColorStop(0, `rgba(255,214,190,${.12 + r() * .16})`); gg.addColorStop(1, 'rgba(255,214,190,0)');
@@ -275,13 +277,13 @@ function stageSky() {
   scene.background = sky.t;
   const env = makeEnv(); [M.honey, M.honey2, M.gold, M.silver, M.steel, M.glassD].forEach(m => { m.envMap = env; m.envMapIntensity = (m === M.honey || m === M.honey2) ? .3 : .6; m.needsUpdate = true; }); M.glass.envMap = env; M.glass.envMapIntensity = .35;
   scene.fog = new THREE.FogExp2(0xf0b878, .0085);                       // sương mù nhẹ
-  scene.add(new THREE.HemisphereLight(0xffd9a8, 0x5a4634, .6));
-  const sun = new THREE.DirectionalLight(0xffc27a, 1.55); sun.position.set(-22, 20, 42); sun.target.position.set(0, 0, -6);
+  scene.add(new THREE.HemisphereLight(0xe9e0d8, 0x66503c, .62));
+  const sun = new THREE.DirectionalLight(0xffbf73, 1.65); sun.position.set(-22, 20, 42); sun.target.position.set(0, 0, -6);
   scene.add(sun, sun.target);
   if (!LOW) {                                                           // bóng đổ mềm chỉ ở máy mạnh
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     const c = sun.shadow.camera; c.left = -34; c.right = 34; c.top = 34; c.bottom = -34; c.near = 5; c.far = 130;
-    sun.shadow.bias = -.0004; sun.shadow.normalBias = .03; sun.shadow.radius = 3;
+    sun.shadow.bias = -.0004; sun.shadow.normalBias = .03; sun.shadow.radius = 4;
   }
   [[0, 2.8, -3.5], [-1, 2.8, -9.5], [1.5, 2.8, -16], [0, 2.8, -22.5]].forEach(p => {   // đèn ấm trong cửa hàng
     const l = new THREE.PointLight(0xffcf8a, 3.4, 16, 1); l.position.set(p[0], p[1], p[2]); scene.add(l);
@@ -292,6 +294,12 @@ function stageSky() {
   }
 }
 
+let NOISE = null;
+function noiseBump(rx, ry) {                                                       // nền nhám li ti: làm ánh sáng trên đá/sàn lấp lánh không còn phẳng như nhựa
+  if (LOW) return null;
+  if (!NOISE) { const r = seeded(5), o = canvasTex(128, 128, (g, w, h) => { for (let i = 0; i < 5200; i++) { const v = 90 + r() * 120 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); } }); o.t.colorSpace = THREE.NoColorSpace; o.t.wrapS = o.t.wrapT = THREE.RepeatWrapping; NOISE = o.t; }
+  const t = NOISE.clone(); t.needsUpdate = true; t.repeat.set(rx, ry); return t;
+}
 function stagePlaza() {
   const r = seeded(99);
   // ---- đường nhựa (nền) ----
@@ -320,7 +328,7 @@ function stagePlaza() {
     g.strokeStyle = '#c99a2e'; g.lineWidth = 3; g.strokeRect(14, 14, 484, 484);
   });
   ap.t.wrapS = ap.t.wrapT = THREE.RepeatWrapping; ap.t.repeat.set(6, 1.1);
-  const apron = P(scene, new THREE.MeshStandardMaterial({ map: ap.t, roughness: .42, envMap: makeEnv(), envMapIntensity: .3 }), [24, 4.4], [0, .01, 2.9], [-Math.PI / 2, 0, 0]); apron.receiveShadow = !LOW;
+  const apron = P(scene, new THREE.MeshStandardMaterial({ map: ap.t, roughness: .4, envMap: makeEnv(), envMapIntensity: .3, bumpMap: noiseBump(48, 9), bumpScale: .35 }), [24, 4.4], [0, .01, 2.9], [-Math.PI / 2, 0, 0]); apron.receiveShadow = !LOW;
   // thảm xanh lục viền vàng từ mép vỉa hè tới cửa + cọc nhung mạ vàng
   const cp = canvasTex(128, 256, (g, w, h) => {
     g.fillStyle = '#0f4a2b'; g.fillRect(0, 0, w, h); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${r() < .5 ? '255,255,255' : '0,0,0'},.03)`; g.fillRect(r() * w, r() * h, 2, 2); }
@@ -516,7 +524,7 @@ function stageInterior() {
     g.fillStyle = 'rgba(0,0,0,.25)'; for (let i = 0; i < 8; i++) g.fillRect(i * 32 + 30, 0, 2, h);
   });
   wt.t.wrapS = wt.t.wrapT = THREE.RepeatWrapping; wt.t.repeat.set(7, 6);
-  const floor = P(I, std(0xffffff, { map: wt.t, roughness: .42, envMap: makeEnv(), envMapIntensity: .25 }), [20, 34], [0, .012, -17], [-Math.PI / 2, 0, 0]); floor.receiveShadow = !LOW;
+  const floor = P(I, std(0xffffff, { map: wt.t, roughness: .4, envMap: makeEnv(), envMapIntensity: .25, bumpMap: noiseBump(40, 68), bumpScale: .3 }), [20, 34], [0, .012, -17], [-Math.PI / 2, 0, 0]); floor.receiveShadow = !LOW;
   const ceil = P(I, M.ceil, [20, 34], [0, 3.45, -17], [Math.PI / 2, 0, 0]); ceil.castShadow = !LOW;
   const wl = P(I, M.cream, [34, 3.45], [-10, 1.725, -17], [0, Math.PI / 2, 0]); const wr = P(I, M.cream, [34, 3.45], [10, 1.725, -17], [0, -Math.PI / 2, 0]);
   wl.castShadow = wr.castShadow = !LOW;
@@ -1253,7 +1261,7 @@ function sync() {
    - Cuối hành trình 3D (tiến độ > 95%) hiện nút "Xem bằng dạng danh sách".
    Chỉnh nhanh: LIST_CLASS (tên class danh sách), END_BTN_BOTTOM (khoảng cách nút tới đáy), chữ trong GATE_TXT. */
 const LIST_CLASS = 'lm', END_BTN_BOTTOM = '24px';
-const GATE_TXT = { title: 'Ê, bạn thuộc hệ nào?', sub: 'Chọn đại cũng được, đổi ý lúc nào cũng được', young: 'Hệ Lướt Nhanh', youngSub: 'Thích 3D, vào cửa hàng cái rẹt', youngIc: '⚡', old: 'Hệ Chill Chill', oldSub: 'Chữ to, danh sách rõ, khỏi lướt mỏi tay', oldIc: '🍵', end: 'Mỏi tay rồi? Xem dạng danh sách' };
+const GATE_TXT = { title: 'Bạn thích xem kiểu nào?', sub: 'Chọn sai cũng không sao, đổi ý lúc nào cũng được', young: 'Lướt như TikTok', youngSub: 'Vuốt một phát bay tới tận tủ đông', youngIc: '📱', old: 'Đọc như tờ báo', oldSub: 'Chữ to, rõ từng dòng, không lo lạc đường', oldIc: '👓', end: 'Mỏi tay rồi? Xem dạng danh sách' };
 const UI = { gate: null, btn: null, open: false, prevOverflow: '', endK: '' };
 function enterList() { document.body.classList.add(LIST_CLASS); }               // index.html lo phần hiển thị danh sách; MutationObserver trong boot() sẽ tự dừng 3D
 function setGate(open) {
@@ -1334,8 +1342,9 @@ async function boot() {
       bloom = new c.UnrealBloomPass(new THREE.Vector2(256, 256), .28, .5, 1.3); composer.addPass(bloom); composer.addPass(new d.OutputPass());
       composer.addPass(film = new e2.ShaderPass({                                                         // tông phim: vignette nhẹ, tương phản mềm, ấm vàng ở vùng sáng
         uniforms: { tDiffuse: { value: null } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; vec2 q = vUv - .5; float v = smoothstep(.95, .25, length(q * vec2(1.0, .85)));'
-          + ' c = mix(c * c * (3.0 - 2.0 * c), c, .55); float l = dot(c, vec3(.299, .587, .114)); c += vec3(.035, .018, -.01) * smoothstep(.45, 1.0, l); c *= mix(.62, 1.0, v); gl_FragColor = vec4(c, 1.0); }' }));
+        fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; vec2 q = vUv - .5; float v = smoothstep(.98, .3, length(q * vec2(1.0, .85)));'
+          + ' c = mix(c * c * (3.0 - 2.0 * c), c, .55); float l = dot(c, vec3(.299, .587, .114)); c = mix(vec3(l), c, 1.16);'
+          + ' c += vec3(-.012, .004, .02) * (1.0 - smoothstep(.0, .4, l)); c += vec3(.035, .018, -.01) * smoothstep(.45, 1.0, l); c *= mix(.72, 1.0, v); gl_FragColor = vec4(max(c, 0.0), 1.0); }' }));
       useComposer = true;
     } catch (e) { composer = null; useComposer = false; }
   }
@@ -1366,7 +1375,7 @@ async function boot() {
   await wait(250); $('wload').classList.add('hide');
 }
 
-API.version = 'v8';
+API.version = 'v9';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
