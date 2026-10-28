@@ -99,7 +99,7 @@ function rrShape(w, h, r) {
 function ringGeo(w, h, r, t) { const s = rrShape(w, h, r); s.holes.push(rrShape(w - 2 * t, h - 2 * t, Math.max(r - t, .05))); return new THREE.ShapeGeometry(s, 12); }
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); draw(g, w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return { c, g, t, w, h };
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer ? renderer.capabilities.getMaxAnisotropy() : 4); return { c, g, t, w, h };
 }
 function textMat(text, ratio, color, weight = 700) {
   const W = 1024, H = Math.round(W / ratio);
@@ -277,8 +277,8 @@ function stageSky() {
   scene.background = sky.t;
   const env = makeEnv(); [M.honey, M.honey2, M.gold, M.silver, M.steel, M.glassD].forEach(m => { m.envMap = env; m.envMapIntensity = (m === M.honey || m === M.honey2) ? .3 : .6; m.needsUpdate = true; }); M.glass.envMap = env; M.glass.envMapIntensity = .35;
   scene.fog = new THREE.FogExp2(0xf0b878, .0085);                       // sương mù nhẹ
-  scene.add(new THREE.HemisphereLight(0xe9e0d8, 0x66503c, .62));
-  const sun = new THREE.DirectionalLight(0xffbf73, 1.65); sun.position.set(-22, 20, 42); sun.target.position.set(0, 0, -6);
+  scene.add(new THREE.HemisphereLight(0xfff0dc, 0x7a6248, 1.0));
+  const sun = new THREE.DirectionalLight(0xffc98a, 1.9); sun.position.set(-22, 20, 42); sun.target.position.set(0, 0, -6);
   scene.add(sun, sun.target);
   if (!LOW) {                                                           // bóng đổ mềm chỉ ở máy mạnh
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
@@ -286,7 +286,7 @@ function stageSky() {
     sun.shadow.bias = -.0004; sun.shadow.normalBias = .03; sun.shadow.radius = 4;
   }
   [[0, 2.8, -3.5], [-1, 2.8, -9.5], [1.5, 2.8, -16], [0, 2.8, -22.5]].forEach(p => {   // đèn ấm trong cửa hàng
-    const l = new THREE.PointLight(0xffcf8a, 3.4, 16, 1); l.position.set(p[0], p[1], p[2]); scene.add(l);
+    const l = new THREE.PointLight(0xffd9a0, 4.6, 18, 1); l.position.set(p[0], p[1], p[2]); scene.add(l);
   });
   const gl = new THREE.PointLight(0x62ffa8, 2.4, 9, 1); gl.position.set(2.5, 2.6, -31); scene.add(gl);   // ánh xanh trong kho
   if (!LOW) {
@@ -1215,10 +1215,11 @@ let rsT = 0; function resizeSoon() { clearTimeout(rsT); rsT = setTimeout(resize,
 function applyPR() {
   renderer.setPixelRatio(Q.pr); renderer.setSize(W, H, false); canvas.style.width = '100%'; canvas.style.height = '100%';
   if (composer) { composer.setPixelRatio(Q.pr); composer.setSize(W, H); }
+  if (film) film.uniforms.px.value.set(1 / (W * Q.pr), 1 / (H * Q.pr));
 }
 function resize() {
   if (!world || !renderer) return; const w = world.clientWidth, h = world.clientHeight; if (w < 10 || h < 10) return;
-  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, LOW ? 1 : 1.25); if (!Q.pr || Q.pr > Q.max) Q.pr = Q.max;
+  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, LOW ? 1 : 1.75); if (!Q.pr || Q.pr > Q.max) Q.pr = Q.max;
   applyPR();
   camera.aspect = w / h; camera.fov = w / h < .75 ? 80 : w / h < 1.2 ? 68 : 58; camera.updateProjectionMatrix();   // FOV rộng hơn khi màn dọc
   stk.style.height = h + 'px'; stk.style.marginBottom = -h + 'px'; spc.style.height = (h * 7) + 'px';            // ruột cuộn khoảng 700vh
@@ -1322,7 +1323,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 async function boot() {
   world = $('world'); scroller = $('scroller'); stk = $('stk'); spc = $('spc'); canvas = document.createElement('canvas'); $('wcv').appendChild(canvas);
   renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
   if (!LOW) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; }   // bóng vẽ 1 lần (cảnh tĩnh); chỉ vẽ lại khi cửa chuyển động
   if (PERF) renderer.info.autoReset = false;
   camera = new THREE.PerspectiveCamera(60, 1, .1, 220); camera.rotation.order = 'YXZ';
@@ -1331,20 +1332,20 @@ async function boot() {
   // màn hình tải với phần trăm thật
   const mgr = new THREE.LoadingManager(); const pct = $('wpct');
   mgr.onProgress = (u, l, t) => { pct.textContent = Math.round(l / t * 100) + '%'; $('wfill').style.width = (l / t * 100) + '%'; };
-  const steps = ['font', 'logo', 'post', 'sky', 'plaza', 'facade', 'interior', 'objects', 'decor']; steps.forEach(s => mgr.itemStart(s));
+  const steps = ['font', 'logo', 'post', 'sky', 'plaza', 'facade', 'interior', 'objects', 'decor', 'start']; steps.forEach(s => mgr.itemStart(s));
   const fin = async s => { mgr.itemEnd(s); await wait(30); };
   try { await Promise.race([document.fonts.load('700 40px "Be Vietnam Pro"'), wait(1500)]); } catch (e) { } await fin('font');
   const logo = await new Promise(res => new THREE.ImageLoader(mgr).load('assets/logo.png', res, undefined, () => res(null))); await fin('logo');
   if (!LOW) {                                                                                      // bloom nhẹ, chỉ máy mạnh
     try {
       const [a, b, c, d, e2] = await Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
-      composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 2 })); composer.addPass(new b.RenderPass(scene, camera));
+      composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 })); composer.addPass(new b.RenderPass(scene, camera));
       bloom = new c.UnrealBloomPass(new THREE.Vector2(256, 256), .28, .5, 1.3); composer.addPass(bloom); composer.addPass(new d.OutputPass());
       composer.addPass(film = new e2.ShaderPass({                                                         // tông phim: vignette nhẹ, tương phản mềm, ấm vàng ở vùng sáng
-        uniforms: { tDiffuse: { value: null } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; vec2 q = vUv - .5; float v = smoothstep(.98, .3, length(q * vec2(1.0, .85)));'
-          + ' c = mix(c * c * (3.0 - 2.0 * c), c, .55); float l = dot(c, vec3(.299, .587, .114)); c = mix(vec3(l), c, 1.16);'
-          + ' c += vec3(-.012, .004, .02) * (1.0 - smoothstep(.0, .4, l)); c += vec3(.035, .018, -.01) * smoothstep(.45, 1.0, l); c *= mix(.72, 1.0, v); gl_FragColor = vec4(max(c, 0.0), 1.0); }' }));
+        uniforms: { tDiffuse: { value: null }, px: { value: new THREE.Vector2(1 / 1280, 1 / 720) } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform sampler2D tDiffuse; uniform vec2 px; varying vec2 vUv; void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; vec3 bl = (texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb) * .25; c += (c - bl) * .6; c = max(c, 0.0); vec2 q = vUv - .5; float v = smoothstep(.98, .3, length(q * vec2(1.0, .85)));'
+          + ' c = mix(c * c * (3.0 - 2.0 * c), c, .55); float l = dot(c, vec3(.299, .587, .114)); c = mix(vec3(l), c, 1.22);'
+          + ' c += vec3(-.005, .002, .008) * (1.0 - smoothstep(.0, .4, l)); c += vec3(.035, .018, -.01) * smoothstep(.45, 1.0, l); c *= mix(.9, 1.0, v); gl_FragColor = vec4(max(c, 0.0), 1.0); }' }));
       useComposer = true;
     } catch (e) { composer = null; useComposer = false; }
   }
@@ -1372,10 +1373,12 @@ async function boot() {
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   fxInit(); windInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
-  await wait(250); $('wload').classList.add('hide');
+  API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
+  await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
+  await fin('start'); $('wload').classList.add('hide');
 }
 
-API.version = 'v9';
+API.version = 'v10';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
