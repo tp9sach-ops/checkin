@@ -4,6 +4,7 @@
    Mọi chỗ có thể chỉnh nằm ở 3 khối đầu: SCENES, CAM, HOT
    [v5 — sửa giật/lag/lóa] xem mục 'V5' trong HANDOFF.md. Thêm ?perf=1 vào URL để hiện bảng FPS.
    [v6 — cổng chọn Trẻ / Có tuổi + nút 'Xem dạng danh sách' ở cuối] xem mục 'GATE' bên dưới (buildGate).
+   [v7 — hiệu ứng khi mở trang liên kết (xem khối V7: FXD)]
    [v6.1 — chống lỗi không thấy cổng: bọc buildGate bằng try/catch + log console; thêm World.version; index.html nạp scene.js kèm ?v=6.1 để khỏi dính cache]
    ========================================================================== */
 import * as THREE from 'three';
@@ -242,6 +243,7 @@ let posC, lookC, maxScroll = 1, target = 0, sp = 0, keepP = 0, raf = 0, last = 0
 const HOTS = [], LIVE = {}, dots = [];
 let slideL, slideR, khoL, khoR, altarLight, hover = null, active = null, fly = null, needRay = false, ptrXY = null, lastTouch = false;
 const API = { ready: false };
+let fx = null; const FXO = {};            // V7: hiệu ứng đang chạy + tham chiếu các bộ phận động (xem khối V7 bên dưới)
 window.World = API;
 
 /* ============================ ĐỒ HỌA ============================ */
@@ -550,8 +552,7 @@ function stageObjects() {
   /* kpi: máy tính trên bàn thu ngân */
   { const g = new THREE.Group(); g.position.set(2.3, 1.06, -13.2);
     C(g, M.dark, [.2, .02, .2], [0, .01, 0]); B(g, M.dark, [.05, .26, .05], [0, .14, 0]); B(g, M.dark, [.8, .52, .04], [0, .5, 0]);
-    const t = canvasTex(256, 160, (c, w, h) => { c.fillStyle = '#0a261d'; c.fillRect(0, 0, w, h); c.fillStyle = '#e9d8a6'; c.font = `600 18px ${FONT}`; c.fillText('KPI vận hành', 12, 26);
-      [.5, .8, .6, .95, .7, .85].forEach((v, i) => { c.fillStyle = i % 2 ? '#ffd36b' : '#3fe08a'; c.fillRect(16 + i * 38, 140 - v * 90, 26, v * 90); }); });
+    const t = canvasTex(256, 160, (c, w, h) => drawKpi(c, w, h, 1, false)); FXO.kpi = t;
     P(g, screenMat(t.t), [.74, .46], [0, .5, .025]); B(g, M.dark, [.5, .02, .16], [0, .01, .38]); hot('kpi', g); }
   /* kc: sổ và ngăn kéo tiền */
   { const g = new THREE.Group(); g.position.set(4.6, 1.06, -13.1);
@@ -567,7 +568,14 @@ function stageObjects() {
   { const g = new THREE.Group(); g.position.set(-9.86, 1.6, -17); g.rotation.y = Math.PI / 2;
     B(g, std(0x2b2f33, { metalness: .4 }), [.5, .62, .14], [0, 0, 0]);
     LIVE.clock = canvasTex(256, 192, (c, w, h) => drawClock(c, w, h)); P(g, screenMat(LIVE.clock.t), [.38, .28], [0, .1, .075]);
-    C(g, M.ledG, [.1, .02, .1], [0, -.18, .075], [Math.PI / 2, 0, 0]); hot('cong', g); }
+    C(g, M.ledG, [.1, .02, .1], [0, -.18, .075], [Math.PI / 2, 0, 0]);
+    const head = new THREE.Group(); head.position.set(0, .16, 0); g.add(head); FXO.camHead = head;                // V7: camera chụp ảnh nằm trong thân máy, bật lên khi chấm công
+    B(head, M.dark, [.22, .13, .09], [0, 0, 0]); B(head, M.dark, [.08, .16, .04], [0, -.14, -.01]); B(head, M.silver, [.24, .015, .1], [0, .07, 0]);
+    C(head, M.silver, [.095, .03, .095], [0, 0, .05], [Math.PI / 2, 0, 0]); C(head, M.black, [.07, .035, .07], [0, 0, .052], [Math.PI / 2, 0, 0]);
+    C(head, std(0x2b5cff, { roughness: .1, metalness: .8 }), [.04, .036, .04], [0, 0, .054], [Math.PI / 2, 0, 0]);
+    const lens = new THREE.Object3D(); lens.position.set(0, 0, .075); head.add(lens); FXO.lens = lens;
+    FXO.camLed = C(head, emi(0xff3030, 2), [.016, .016, .016], [.085, .05, .046], [Math.PI / 2, 0, 0]); FXO.camLed.visible = false;
+    hot('cong', g); }
   { const g = new THREE.Group(); g.position.set(-9.9, 1.8, -19.3); g.rotation.y = Math.PI / 2;
     B(g, M.woodD, [1.0, 1.3, .05], [0, 0, 0]);
     const t = canvasTex(256, 320, (c, w, h) => { c.fillStyle = '#fbf6e6'; c.fillRect(0, 0, w, h); c.fillStyle = '#b3201f'; c.font = `700 34px ${FONT}`; c.textAlign = 'center'; c.fillText('NỘI QUY', w / 2, 56);
@@ -581,18 +589,29 @@ function stageObjects() {
       c.fillStyle = '#1f9a4b'; for (let i = 0; i < 3; i++) { c.fillRect(30, 100 + i * 38, 220 - i * 30, 8); c.beginPath(); c.arc(20, 104 + i * 38, 5, 0, 7); c.fill(); }
       c.strokeStyle = '#d33'; c.lineWidth = 4; c.strokeRect(290, 100, 90, 56); c.strokeRect(420, 100, 70, 56); c.beginPath(); c.moveTo(380, 128); c.lineTo(418, 128); c.stroke(); });
     P(g, new THREE.MeshBasicMaterial({ map: t.t }), [2.56, 1.36], [0, 0, .03]); B(g, M.silver, [.9, .04, .08], [0, -.78, .05]);
+    { const bk = document.createElement('canvas'); bk.width = t.w; bk.height = t.h; bk.getContext('2d').drawImage(t.c, 0, 0); FXO.board = t; FXO.boardBak = bk;       // V7: bản sao nội dung bảng để lau xong khôi phục
+      const wp = new THREE.Group(); wp.visible = false; g.add(wp); FXO.wipe = wp; FXO.wipeHost = g;
+      B(wp, std(0x3d7fd0, { roughness: .95 }), [.34, .06, .18], [0, 0, 0]); B(wp, std(0x2a5fa8, { roughness: .95 }), [.34, .02, .19], [0, .035, 0]);
+      S(wp, std(0xe0b48c), [.16, .1, .12], [.06, .01, .13]); limb(wp, M.polo, [.08, 0, .17], [.6, -.42, .62], .05, .065); }
     ['#d33', '#1e5bd8', '#1f9a4b'].forEach((c, i) => C(g, std(c), [.03, .12, .03], [-.2 + i * .2, -.74, .08], [0, 0, Math.PI / 2])); hot('dt', g); }
   { const g = new THREE.Group(); g.position.set(-8.7, 0, -24.2); g.rotation.y = Math.PI / 2;
     B(g, std(0x6b1d12, { roughness: .5 }), [1.2, .8, .55], [0, .4, 0]); B(g, M.gold, [1.25, .04, .6], [0, .82, 0]); B(g, M.red, [1.4, 1.5, .06], [0, 1.55, -.3]); B(g, M.gold, [1.3, .04, .08], [0, 2.3, -.28]);
     C(g, M.gold, [.22, .12, .22], [0, .9, 0]); C(g, M.gold, [.24, .3, .2], [0, 1.1, 0]); S(g, std(0xf1c8a0), [.26, .26, .26], [0, 1.34, 0]); B(g, M.red, [.28, .1, .12], [0, 1.5, 0]);
     C(g, M.gold, [.28, .1, .28], [-.4, .9, .1]);
-    for (let i = 0; i < 3; i++) { C(g, M.red, [.012, .2, .012], [-.45 + i * .05, 1.05, .1]); S(g, M.flame, [.03, .03, .03], [-.45 + i * .05, 1.16, .1]); }
+    for (let i = 0; i < 3; i++) { C(g, M.red, [.012, .2, .012], [-.45 + i * .05, 1.05, .1]); (FXO.tips = FXO.tips || []).push(S(g, M.flame, [.03, .03, .03], [-.45 + i * .05, 1.16, .1])); }
     [-.52, .52].forEach(x => { C(g, M.red, [.07, .2, .07], [x, .94, .05]); S(g, M.flame, [.06, .1, .06], [x, 1.08, .05]); });
     C(g, M.gold, [.34, .02, .34], [.3, .86, .12]); [0, 1, 2].forEach(i => S(g, i === 1 ? M.apple : M.orange, [.12, .12, .12], [.22 + i * .09, .94, .12]));
     [0, 1, 2].forEach(i => C(g, M.white, [.06, .05, .06], [-.1 + i * .1, .86, .2])); hot('tl', g); }
   { const g = new THREE.Group(); g.position.set(-5.5, 0, -27.14);
     B(g, M.woodD, [2.4, 1.9, .03], [0, .95, -.24]); [-1.2, 1.2].forEach(x => B(g, M.wood, [.06, 1.9, .5], [x, .95, 0])); [.1, .95, 1.6].forEach(y => B(g, M.wood, [2.4, .04, .5], [0, y, 0]));
     B(g, M.cardboard, [.5, .4, .4], [-.7, .32, 0]); B(g, M.cardboard, [.4, .3, .4], [.1, .27, 0]); B(g, M.cardboard, [.45, .35, .4], [.8, .3, 0]);
+    { const fl = (z, dir) => { const pv = new THREE.Group(); pv.position.set(.8, .478, z); g.add(pv); B(pv, M.cardboard, [.45, .012, .2], [0, 0, dir * .1]); return pv; };   // V7: nắp hộp 2 cánh
+      FXO.flapF = fl(.2, -1); FXO.flapB = fl(-.2, 1);
+      FXO.boxIn = P(g, std(0x1b1209, { roughness: 1 }), [.43, .38], [.8, .4765, 0], [-Math.PI / 2, 0, 0]); FXO.boxIn.visible = false;
+      const pk = new THREE.Group(); pk.position.set(.8, .36, 0); g.add(pk); FXO.pkg = pk; pk.visible = false;
+      const it = canvasTex(128, 128, (c, w, h) => { c.fillStyle = '#1e5bd8'; c.beginPath(); c.roundRect(6, 6, w - 12, h - 12, 26); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 12; c.lineCap = 'round'; c.lineJoin = 'round';
+        c.beginPath(); c.moveTo(64, 28); c.lineTo(64, 78); c.moveTo(40, 58); c.lineTo(64, 82); c.lineTo(88, 58); c.moveTo(36, 100); c.lineTo(92, 100); c.stroke(); });
+      const im2 = new THREE.MeshBasicMaterial({ map: it.t, transparent: true, side: THREE.DoubleSide, toneMapped: false }); P(pk, im2, [.24, .24], [0, 0, 0]); }
     B(g, M.dark, [.46, .02, .3], [-.5, .98, .02]);
     const lh = new THREE.Group(); lh.position.set(-.5, .99, -.12); lh.rotation.x = -.35; g.add(lh); B(lh, M.dark, [.46, .3, .015], [0, .15, 0]);
     const t = canvasTex(256, 160, (c, w, h) => { const gr = c.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#1e5bd8'); gr.addColorStop(1, '#0a2a6a'); c.fillStyle = gr; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.fillRect(30, 24, 120, 90); c.fillStyle = '#1e5bd8'; c.fillRect(30, 24, 120, 16); });
@@ -620,7 +639,23 @@ function stageObjects() {
     [[-.2, -33.2], [5.4, -33.2], [-.2, -29.6], [5.4, -29.6]].forEach(p => { for (let k = 0; k < 9; k++) items.push([p[0], .045 + k * .092, p[1], (rnd() - .5) * .3]); });
     const im = new THREE.InstancedMesh(new THREE.BoxGeometry(.46, .09, .22), billM, items.length);
     items.forEach((it, i) => { dummy.position.set(it[0], it[1], it[2]); dummy.rotation.set(0, it[3], 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); });
-    const g = new THREE.Group(); g.add(im); hot('loi', g, [2.5, .7, -32, 3.4, 1.3, 1.5]); }
+    const g = new THREE.Group(); g.add(im);
+    { const SF = new THREE.Group(); SF.position.set(2.5, 0, -33.5); g.add(SF);                                          // V7: tủ tiền (két sắt) sát tường cuối kho
+      const sd = std(0x2b3338, { roughness: .45, metalness: .6 });
+      B(SF, sd, [1.1, 1.5, .06], [0, .75, -.37]); B(SF, sd, [.1, 1.5, .8], [-.5, .75, 0]); B(SF, sd, [.1, 1.5, .8], [.5, .75, 0]); B(SF, sd, [1.1, .1, .8], [0, 1.45, 0]); B(SF, sd, [1.1, .1, .8], [0, .05, 0]);
+      B(SF, M.steel, [.9, .04, .7], [0, .62, 0]); B(SF, M.steel, [.9, .04, .7], [0, 1.02, 0]);
+      B(SF, emi(0xffd36b, .55), [.9, 1.3, .02], [0, .75, -.33]);
+      B(SF, M.gold, [1.14, .05, .04], [0, 1.5, .42]); B(SF, M.gold, [1.14, .05, .04], [0, 0, .42]); B(SF, M.gold, [.05, 1.5, .04], [-.55, .75, .42]); B(SF, M.gold, [.05, 1.5, .04], [.55, .75, .42]);
+      const bn = []; [[.08, 3], [.64, 2], [1.04, 2]].forEach(r => [-.28, 0, .28].forEach(x => { for (let k = 0; k < r[1]; k++) bn.push([x, r[0] + .05 + k * .1 + (k ? 0 : 0), -.05]); }));
+      const im2 = new THREE.InstancedMesh(new THREE.BoxGeometry(.25, .1, .2), billM, bn.length);
+      bn.forEach((b, i) => { dummy.position.set(b[0], b[1], b[2]); dummy.rotation.set(0, (rnd() - .5) * .2, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); im2.setMatrixAt(i, dummy.matrix); }); SF.add(im2);
+      const dr = new THREE.Group(); dr.position.set(-.52, 0, .38); SF.add(dr); FXO.safeDoor = dr;
+      B(dr, std(0x1f262a, { roughness: .4, metalness: .6 }), [1.04, 1.42, .08], [.52, .75, .04]); B(dr, M.gold, [.92, 1.3, .02], [.52, .75, .085]); B(dr, std(0x39444a, { roughness: .35, metalness: .7 }), [.84, 1.22, .02], [.52, .75, .097]);
+      P(dr, textMat('TỦ TIỀN', 4, '#f4d27a'), [.5, .125], [.52, 1.2, .11]);
+      const dl = new THREE.Group(); dl.position.set(.52, .82, .12); dr.add(dl); FXO.safeDial = dl; C(dl, M.gold, [.3, .05, .3], [0, 0, 0], [Math.PI / 2, 0, 0]); C(dl, M.dark, [.2, .06, .2], [0, 0, .005], [Math.PI / 2, 0, 0]);
+      [0, 1, 2].forEach(i => { const sp = B(dl, M.gold, [.035, .36, .03], [0, 0, .04]); sp.rotation.z = i * Math.PI / 3; });
+      const hd = new THREE.Group(); hd.position.set(.52, .45, .12); dr.add(hd); FXO.safeHandle = hd; B(hd, M.silver, [.4, .05, .05], [0, 0, .03]); C(hd, M.gold, [.1, .06, .1], [0, 0, .02], [Math.PI / 2, 0, 0]); }
+    hot('loi', g, [2.5, .7, -32, 3.4, 1.3, 1.5]); }
 }
 
 
@@ -738,10 +773,11 @@ function stageFreezer() {
     const c = cake(f, r === 2 && k % 2 === 0); c.position.set(x, .758, z); c.rotation.y = r === 2 && k % 2 === 0 ? (rnd() - .5) * .5 : rnd() * 6.283; g.add(c);
   }
   g.add(tray);
-  B(g, M.glass, [4.5, .42, 1.6], [0, .93, 0]);                                                                 // nắp kính
-  B(g, M.silver, [4.5, .025, .035], [0, 1.14, .8]); B(g, M.silver, [4.5, .025, .035], [0, 1.14, -.8]);
+  const lid = new THREE.Group(); lid.position.set(0, .72, -.8); g.add(lid); FXO.lid = lid;                       // nắp kính có bản lề phía sau (V7: mở được)
+  B(lid, M.glass, [4.5, .42, 1.6], [0, .21, .8]);                                                              // nắp kính
+  B(lid, M.silver, [4.5, .025, .035], [0, .42, 1.6]); B(lid, M.silver, [4.5, .025, .035], [0, .42, 0]);
   const sh = canvasTex(256, 32, (c, w, h) => { const gr = c.createLinearGradient(0, 0, w, 0); [[.28, 0], [.36, .6], [.44, 0], [.6, 0], [.66, .32], [.72, 0]].forEach(s => gr.addColorStop(s[0], `rgba(255,255,255,${s[1]})`)); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
-  P(g, new THREE.MeshBasicMaterial({ map: sh.t, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }), [4.4, 1.5], [0, 1.145, 0], [-Math.PI / 2, 0, 0]);   // vệt phản chiếu trên kính
+  P(lid, new THREE.MeshBasicMaterial({ map: sh.t, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }), [4.4, 1.5], [0, .425, .8], [-Math.PI / 2, 0, 0]);   // vệt phản chiếu trên kính
   hot('don', g, [-2.5, .72, -8.5, 4.6, 1.2, 1.7]);
 }
 
@@ -814,6 +850,7 @@ function drawClock(g, w, h) {
   const n = new Date(), p = x => String(x).padStart(2, '0'); g.fillStyle = '#04181a'; g.fillRect(0, 0, w, h);
   g.fillStyle = '#7fe8c4'; g.font = `700 54px ${FONT}`; g.textAlign = 'center'; g.fillText(`${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`, w / 2, 90);
   g.fillStyle = '#9fb5aa'; g.font = `500 20px ${FONT}`; g.fillText(`${p(n.getDate())}/${p(n.getMonth() + 1)}/${n.getFullYear()}`, w / 2, 124); g.fillStyle = '#ffd36b'; g.fillText('CHẤM CÔNG', w / 2, 164);
+  if (LIVE.shot) { g.fillStyle = 'rgba(4,24,26,.82)'; g.fillRect(0, 0, w, h); g.fillStyle = '#3fe08a'; g.font = `800 46px ${FONT}`; g.fillText('✓', w / 2, 80); g.font = `700 24px ${FONT}`; g.fillText('ĐÃ GHI NHẬN', w / 2, 128); g.fillStyle = '#9fb5aa'; g.font = `500 18px ${FONT}`; g.fillText(`${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`, w / 2, 160); }
 }
 
 /* ============================ CHẤM SÁNG, HUD, TƯƠNG TÁC ============================ */
@@ -832,7 +869,7 @@ function buildDots() {
     el.addEventListener('click', () => {
       if (N.edit()) return;
       if (lastTouch && active !== m.id) { active = m.id; return; }      // chạm lần 1: hiện thẻ, chạm lần 2: mở
-      N.go(m.id);
+      openMod(m.id);
     });
   });
 }
@@ -852,7 +889,7 @@ function updateDots(now) {
     const nl = !N.url(m); if (d.nl !== nl) { d.nl = nl; d.el.classList.toggle('nl', nl); }
     tmpV.set(hz.at[0], hz.at[1], hz.at[2]).applyMatrix4(camera.matrixWorldInverse); const front = tmpV.z < -.3;
     tmpV.set(hz.at[0], hz.at[1], hz.at[2]).project(camera);
-    let a = front && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05 ? winAlpha(sp, hz.win) : 0;
+    let a = !fx && front && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05 ? winAlpha(sp, hz.win) : 0;
     const x = (tmpV.x * .5 + .5) * W, y = (-tmpV.y * .5 + .5) * H;
     const ok = a.toFixed(2), pe = a > .3 ? 'auto' : 'none';
     if (d.ok !== ok) { d.ok = ok; d.el.style.opacity = ok; } if (d.pe !== pe) { d.pe = pe; d.el.style.pointerEvents = pe; }
@@ -885,6 +922,150 @@ function updateHud() {
   const key = idx + '|' + Math.round(sp * 200); if (key !== hudLast) { hudLast = key; HUD.num.textContent = '0' + (idx + 1) + ' / 07'; HUD.bar.style.height = (sp * 100).toFixed(1) + '%'; }
 }
 
+/* ==========================================================================
+   V7: HIỆU ỨNG KHI MỞ TRANG LIÊN KẾT (bấm chấm sáng / bấm vật thể / tìm kiếm → camera bay tới → vật thể "diễn" → mở trang)
+   don  Tạo đơn khách sỉ : camera lại gần tủ đông, nắp kính mở lên, khói lạnh tỏa ra
+   kpi  Vận hành         : camera quay vào quầy, màn hình máy tính làm mới, cột số liệu mọc lên
+   cong Chấm công        : camera lại gần máy, camera chụp ảnh bật lên, đèn đỏ nháy, lóe sáng chụp, màn hình báo "ĐÃ GHI NHẬN"
+   tl   Góc tâm linh     : que diêm châm lần lượt 3 nén nhang, khói bay lên
+   kt   Cài app, kỹ thuật: camera lại gần kệ, hộp carton mở nắp, biểu tượng tải về nổi lên
+   dt   Đào tạo          : tay cầm giẻ lau bảng trắng từng hàng cho sạch chữ
+   loi  Lợi nhuận        : camera tới tủ tiền, núm xoay, tay nắm, cửa tủ mở, tiền sáng lấp lánh
+   Chỉnh nhanh: mỗi mục trong FXD có dur (giây, tổng thời lượng), P (vị trí camera khi lại gần), L (điểm camera nhìn), inT (giây bay vào).
+   Tắt hiệu ứng 1 mục: xóa mục đó khỏi FXD. Tắt hết: đặt FX_ON = false. Người dùng bật "giảm chuyển động" của hệ điều hành => tự bỏ hiệu ứng.
+   Quy ước: mỗi hiệu ứng có update(t, dt) (t = giây từ lúc bắt đầu) và reset() (trả vật thể về trạng thái nghỉ).
+   Vật thể động phải gọi updateMatrixWorld thủ công (mw) vì scene.matrixWorldAutoUpdate = false. ========================================================================== */
+const FX_ON = true;
+const rg = (t, a, b) => clamp((t - a) / (b - a));
+const mw = o => o.updateMatrixWorld(true);
+const PUF = { pool: [], all: [], tex: null, flash: null, glow: null, dom: null, acc: {} };
+const _v = new THREE.Vector3();
+function fxInit() {                                                           // dựng 1 lần lúc khởi tạo: hạt khói/bụi (sprite mờ) + quầng sáng + lớp lóe DOM
+  if (PUF.pool.length) return;
+  PUF.tex = canvasTex(64, 64, (g, w, h) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.45, 'rgba(255,255,255,.45)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); }).t;
+  for (let i = 0; i < 28; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUF.tex, transparent: true, depthWrite: false, opacity: 0, fog: false })); s.renderOrder = 6; scene.add(s);
+    PUF.pool.push({ s, life: 0, max: 1, v: new THREE.Vector3(), s0: .1, s1: .2, a: .5 }); PUF.all.push(s);
+  }
+  const mk = c => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUF.tex, color: c, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false })); s.renderOrder = 7; scene.add(s); PUF.all.push(s); return s; };
+  PUF.flash = mk(0xffffff); PUF.glow = mk(0xffa040);
+  const d = document.createElement('div'); d.id = 'afx'; d.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:0;visibility:hidden;pointer-events:none;z-index:44'; document.body.appendChild(d); PUF.dom = d;
+  PUF.all.forEach(s => s.visible = true);                                     // hiện tạm để renderer.compile biên dịch trước, tránh khựng lần đầu
+}
+function fxWarmDone() { PUF.all.forEach(s => s.visible = false); }
+function puff(x, y, z, vx, vy, vz, life, s0, s1, a, color) {
+  const p = PUF.pool.find(q => q.life <= 0); if (!p) return;
+  p.life = p.max = life; p.v.set(vx, vy, vz); p.s0 = s0; p.s1 = s1; p.a = a; p.s.material.color.setHex(color); p.s.position.set(x, y, z); p.s.scale.set(s0, s0, 1); p.s.material.opacity = 0; p.s.visible = true;
+}
+function puffStep(dt) {
+  for (const p of PUF.pool) {
+    if (p.life <= 0) continue; p.life -= dt; const s = p.s;
+    if (p.life <= 0) { s.visible = false; s.material.opacity = 0; continue; }
+    const k = 1 - p.life / p.max, z = p.s0 + (p.s1 - p.s0) * k; s.position.addScaledVector(p.v, dt); s.scale.set(z, z, 1); s.material.opacity = p.a * Math.min(k / .15, 1) * (1 - k); s.updateMatrixWorld();
+  }
+}
+function emit(key, rate, dt, fn) { const a = (PUF.acc[key] = (PUF.acc[key] || 0) + rate * dt); const n = Math.floor(a); PUF.acc[key] = a - n; for (let i = 0; i < n; i++) fn(); }
+function glowSpr(sp, pos, size, op) { sp.visible = op > .01; if (!sp.visible) return; sp.position.copy(pos); sp.scale.set(size, size, 1); sp.material.opacity = op; sp.updateMatrixWorld(); }
+const R = (a, b) => a + Math.random() * (b - a);
+function drawKpi(c, w, h, k, show) {
+  c.fillStyle = '#0a261d'; c.fillRect(0, 0, w, h); c.fillStyle = '#e9d8a6'; c.font = `600 18px ${FONT}`; c.textAlign = 'left'; c.fillText('KPI vận hành', 12, 26);
+  [.5, .8, .6, .95, .7, .85].forEach((v, i) => { const hh = v * 90 * clamp(k * 1.5 - i * .1); c.fillStyle = i % 2 ? '#ffd36b' : '#3fe08a'; c.fillRect(16 + i * 38, 140 - hh, 26, hh); });
+  if (show) { c.fillStyle = '#3fe08a'; c.font = `700 18px ${FONT}`; c.textAlign = 'right'; c.fillText('▲ ' + (k * 12.4).toFixed(1) + '%', w - 12, 26); }
+}
+const kf = (t, ks) => { let i = 0; while (i < ks.length - 2 && t > ks[i + 1][0]) i++; const a = ks[i], b = ks[i + 1], u = clamp((t - a[0]) / (b[0] - a[0])); return _v.set(a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u); };
+const FXD = {
+  /* --- Tạo đơn khách sỉ: mở nắp tủ đông kính --- */
+  don: { dur: 2.5, p: [-1.3, 1.7, -6.5], l: [-2.5, .75, -8.5], inT: .7,
+    update(t, dt) {
+      FXO.lid.rotation.x = -1.25 * sm(rg(t, .6, 1.5)); mw(FXO.lid);
+      if (t > .85 && t < 2.3) emit('mist', 34, dt, () => puff(-2.5 + R(-2, 2), .78, -8.5 + R(-.6, .6), R(-.04, .04), R(.2, .32), R(.1, .26), 1.5, .5, 1.2, .3, 0xdff3ff));
+    },
+    reset() { FXO.lid.rotation.x = 0; mw(FXO.lid); } },
+  /* --- Vận hành (KPI): quay vào quầy, màn hình máy tính làm mới --- */
+  kpi: { dur: 2.4, p: [2.2, 1.58, -11.5], l: [2.3, 1.56, -13.2], inT: .8,
+    update(t) {
+      const k = t < .55 ? 1 : t < .85 ? 1 - sm(rg(t, .55, .85)) : sm(rg(t, .85, 2.0)), key = k.toFixed(2);
+      if (key !== FXO.kpiK) { FXO.kpiK = key; drawKpi(FXO.kpi.g, 256, 160, k, t > .55); FXO.kpi.t.needsUpdate = true; }
+    },
+    reset() { FXO.kpiK = ''; drawKpi(FXO.kpi.g, 256, 160, 1, false); FXO.kpi.t.needsUpdate = true; } },
+  /* --- Chấm công: camera bật lên, lóe chụp ảnh --- */
+  cong: { dur: 2.7, p: [-7.3, 1.62, -16.1], l: [-9.86, 1.78, -17], inT: .8,
+    update(t) {
+      FXO.camHead.position.y = .16 + .22 * sm(rg(t, .8, 1.4)); mw(FXO.camHead);
+      FXO.camLed.visible = t > 1.35 && t < 1.95 && Math.floor((t - 1.35) * 9) % 2 === 0; mw(FXO.camLed);
+      const f = t >= 1.95 ? Math.exp(-(t - 1.95) * 8) : 0;
+      PUF.dom.style.visibility = f > .01 ? 'visible' : 'hidden'; PUF.dom.style.opacity = (.85 * f).toFixed(3);
+      FXO.lens.getWorldPosition(_v); glowSpr(PUF.flash, _v, .15 + f * 1.0, f);
+      const shot = t > 2.05; if (shot !== !!LIVE.shot) { LIVE.shot = shot; drawClock(LIVE.clock.g, 256, 192); LIVE.clock.t.needsUpdate = true; }
+    },
+    reset() { FXO.camHead.position.y = .16; mw(FXO.camHead); FXO.camLed.visible = false; PUF.dom.style.visibility = 'hidden'; PUF.dom.style.opacity = 0; PUF.flash.visible = false; LIVE.shot = false; drawClock(LIVE.clock.g, 256, 192); LIVE.clock.t.needsUpdate = true; } },
+  /* --- Góc tâm linh: đốt nhang --- */
+  tl: { dur: 2.8, p: [-6.5, 1.45, -23.2], l: [-8.65, 1.15, -24.0], inT: .8, T: [.9, 1.3, 1.7],
+    start() { FXO.tipW = FXO.tips.map(m => m.getWorldPosition(new THREE.Vector3())); },
+    update(t, dt) {
+      const W = FXO.tipW, T = this.T; let boost = 0;
+      FXO.tips.forEach((m, i) => {
+        const s = t < T[i] ? 1 - .88 * sm(rg(t, 0, .3)) : 1 + 1.6 * Math.exp(-(t - T[i]) * 5); m.scale.setScalar(.03 * s); mw(m);
+        if (t >= T[i]) { boost += 1.2 * Math.exp(-(t - T[i]) * 4); emit('sm' + i, 7, dt, () => puff(W[i].x + R(-.01, .01), W[i].y + .03, W[i].z + R(-.01, .01), R(.01, .05), R(.1, .18), R(-.01, .01), 2.2, .03, .24, .22, 0xd4d4d4)); }
+      });
+      FXO.boost = boost;
+      const w0 = W[0], w1 = W[1], w2 = W[2], op = t > .35 && t < 2.1 ? .95 * sm(rg(t, .35, .55)) * (1 - sm(rg(t, 1.9, 2.1))) : 0;
+      kf(t, [[.35, w0.x + .35, w0.y + .1, w0.z], [T[0], w0.x, w0.y, w0.z], [T[1], w1.x, w1.y, w1.z], [T[2], w2.x, w2.y, w2.z], [2.1, w2.x + .35, w2.y + .12, w2.z]]);
+      glowSpr(PUF.glow, _v, .1 + Math.sin(t * 40) * .015, op);
+    },
+    reset() { FXO.tips.forEach(m => { m.scale.setScalar(.03); mw(m); }); FXO.boost = 0; PUF.glow.visible = false; } },
+  /* --- Cài app, hỗ trợ kỹ thuật: mở hộp carton --- */
+  kt: { dur: 2.7, p: [-4.15, 1.2, -25.0], l: [-4.7, .5, -27.1], inT: .8,
+    update(t, dt) {
+      const o = sm(rg(t, .85, 1.55)); FXO.flapF.rotation.x = 2.2 * o; FXO.flapB.rotation.x = -2.2 * o; FXO.boxIn.visible = o > .04; mw(FXO.flapF); mw(FXO.flapB); mw(FXO.boxIn);
+      const r = sm(rg(t, 1.35, 2.2)); FXO.pkg.visible = r > .01; FXO.pkg.position.y = .36 + r * .42; FXO.pkg.scale.setScalar(.6 + .4 * r); FXO.pkg.rotation.y = Math.sin(t * 3) * .35 * r; mw(FXO.pkg);
+      if (t > .85 && t < 1.6) emit('dust', 22, dt, () => puff(-4.7 + R(-.18, .18), .52, -27.14 + R(-.15, .15), R(-.05, .05), R(.1, .2), R(0, .08), 1.1, .08, .3, .3, 0xe8d9bd));
+    },
+    reset() { FXO.flapF.rotation.x = 0; FXO.flapB.rotation.x = 0; FXO.boxIn.visible = false; FXO.pkg.visible = false; FXO.pkg.position.y = .36; [FXO.flapF, FXO.flapB, FXO.pkg].forEach(mw); } },
+  /* --- Đào tạo: cầm giẻ lau bảng trắng --- */
+  dt: { dur: 2.8, p: [6.8, 1.7, -22.4], l: [9.9, 1.75, -23], inT: .8, ROWS: [.51, .17, -.17, -.51],
+    update(t, dt) {
+      const wp = FXO.wipe, inn = sm(rg(t, .25, .7)), out = sm(rg(t, 2.35, 2.8)), w = rg(t, .7, 2.2), s = w * 4, row = Math.min(3, Math.floor(s)), f = s - row, Y = this.ROWS;
+      const x = (row % 2 === 0 ? -1 + 2 * f : 1 - 2 * f) * 1.1, y = Y[row] + (f > .88 && row < 3 ? (Y[row + 1] - Y[row]) * sm((f - .88) / .12) : 0);
+      wp.visible = t > .25 && out < 1; wp.position.set(x - (1 - inn) * .9 - out * .9, y + (1 - inn) * .25, .11); wp.scale.setScalar(.4 + .6 * inn); wp.rotation.z = Math.sin(t * 14) * .08; mw(wp);
+      if (w > 0 && w < 1.001 && wp.visible) {
+        const c = FXO.board.g, px = (x / 2.56 + .5) * FXO.board.w, py = (.5 - y / 1.36) * FXO.board.h; c.fillStyle = '#fff'; c.fillRect(px - 40, py - 44, 80, 88); FXO.board.t.needsUpdate = true;
+        emit('ink', 26, dt, () => { wp.getWorldPosition(_v); puff(_v.x, _v.y, _v.z, R(-.03, .03), R(-.04, .02), R(-.03, .03), .9, .1, .3, .35, 0x9bb7e8); });
+      }
+    },
+    reset() { const b = FXO.board; b.g.clearRect(0, 0, b.w, b.h); b.g.drawImage(FXO.boardBak, 0, 0); b.t.needsUpdate = true; FXO.wipe.visible = false; } },
+  /* --- Lợi nhuận: mở tủ tiền --- */
+  loi: { dur: 3.0, p: [2.5, 1.4, -30.9], l: [2.5, .85, -33.4], inT: .8,
+    update(t, dt) {
+      FXO.safeDial.rotation.z = -Math.PI * 3 * sm(rg(t, .7, 1.7)); FXO.safeHandle.rotation.z = -.9 * sm(rg(t, 1.7, 1.95)); FXO.safeDoor.rotation.y = -1.95 * sm(rg(t, 1.95, 2.8)); mw(FXO.safeDoor);
+      if (t > 2.2) emit('spk', 30, dt, () => puff(2.5 + R(-.35, .35), R(.3, 1.2), -33.35, R(-.05, .05), R(.12, .22), R(.05, .2), 1.2, .06, .18, .7, 0xffe08a));
+    },
+    reset() { FXO.safeDial.rotation.z = 0; FXO.safeHandle.rotation.z = 0; FXO.safeDoor.rotation.y = 0; mw(FXO.safeDoor); } }
+};
+Object.values(FXD).forEach(d => { d.P = new THREE.Vector3(...d.p); d.L = new THREE.Vector3(...d.l); });
+function canFx(id) {
+  if (!FX_ON || !FXD[id] || !API.ready || !PUF.pool.length || N.edit()) return false;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const m = N.mods().find(x => x.id === id); return !!(m && N.url(m));
+}
+function openMod(id) { if (fx) return; if (canFx(id)) API.flyTo(id, () => N.go(id)); else N.go(id); }   // bấm chấm sáng / vật thể: có hiệu ứng thì bay tới + diễn rồi mới mở trang
+function startFx(id, cb, now) {
+  const d = FXD[id]; fx = { id, def: d, t0: now, cb, called: false, prevOv: scroller.style.overflowY }; scroller.style.overflowY = 'hidden'; active = null; hover = null; PUF.acc = {};
+  if (d.start) d.start();
+}
+function fxStep(now, dt) {                                                     // gọi mỗi khung khi có hiệu ứng; trả về trọng số camera 0..1
+  const d = fx.def, t = (now - fx.t0) / 1000; d.update(t, dt); puffStep(dt);
+  if (!fx.called && t >= d.dur) { fx.called = true; const cb = fx.cb; if (cb) setTimeout(cb, 0); }
+  const w = sm(t / d.inT) * (1 - sm((t - d.dur - .15) / .6));
+  if (t > d.dur + 1.0) { endFx(); return 0; }                                  // trả mọi thứ về trạng thái nghỉ (nếu trang đã mở che cảnh thì chẳng ai thấy)
+  return w;
+}
+function endFx() {
+  if (!fx) return; const f = fx; fx = null; f.def.reset(); scroller.style.overflowY = f.prevOv; PUF.pool.forEach(p => { p.life = 0; p.s.visible = false; });
+  PUF.dom.style.visibility = 'hidden'; PUF.dom.style.opacity = 0; PUF.flash.visible = false; PUF.glow.visible = false;
+}
+function abortFx() { if (fx) endFx(); }
+
 /* ============================ VÒNG LẶP ============================ */
 const tmpV2 = new THREE.Vector3();
 let doorO1 = -1, doorO2 = -1, yawC = 0, pitC = 0, lookInit = false;
@@ -906,7 +1087,13 @@ function tick(now) {
     const dyw = Math.atan2(Math.sin(wy - yawC), Math.cos(wy - yawC)), f = 1 - Math.exp(-dt * ROT_K), lim = ROT_MAX * dt;
     yawC += clamp(dyw * f, -lim, lim); pitC += clamp((wp - pitC) * f, -lim * .6, lim * .6);
   }
-  camera.rotation.set(pitC, yawC, 0); camera.updateMatrixWorld();
+  if (fx) {                                                                  // V7: hiệu ứng mở trang — camera tiến lại gần vật thể rồi trả về đường cũ
+    const wv = fxStep(now, dt);
+    if (wv > 0 && fx) { const d = fx.def; camera.position.lerp(d.P, wv); const ex = d.L.x - camera.position.x, ey = d.L.y - camera.position.y, ez = d.L.z - camera.position.z;
+      const fy = Math.atan2(-ex, -ez), fp = Math.atan2(ey, Math.hypot(ex, ez)); camera.rotation.set(pitC + (fp - pitC) * wv, yawC + Math.atan2(Math.sin(fy - yawC), Math.cos(fy - yawC)) * wv, 0); }
+    else camera.rotation.set(pitC, yawC, 0);
+  } else camera.rotation.set(pitC, yawC, 0);
+  camera.updateMatrixWorld();
   // cửa kính trượt mở (13%..19%) và cửa kho mở (85%..90%) — chỉ cập nhật khi cửa thực sự đổi
   const o1 = sm((sp - .13) / .06), o2 = sm((sp - .85) / .05);
   if (Math.abs(o1 - doorO1) > 1e-4 || Math.abs(o2 - doorO2) > 1e-4) {
@@ -918,12 +1105,12 @@ function tick(now) {
   // màn hình động
   if (sp > .38 && sp < .64 && now - (LIVE.tvT || 0) > 125) { LIVE.tvT = now; drawTV(LIVE.tv.g, 512, 288, now / 1000); LIVE.tv.t.needsUpdate = true; }
   if (sp > .54 && sp < .78 && now - (LIVE.clT || 0) > 1000) { LIVE.clT = now; drawClock(LIVE.clock.g, 256, 192); LIVE.clock.t.needsUpdate = true; }
-  if (altarLight) altarLight.intensity = 1.1 + Math.sin(now / 130) * .12;
+  if (altarLight) altarLight.intensity = 1.1 + Math.sin(now / 130) * .12 + (FXO.boost || 0);
   // rê chuột lên vật thể 3D
   if (needRay && ptrXY) { needRay = false; const h = pickMid(ptrXY[0], ptrXY[1]); if (h !== hover) { hover = h; scroller.style.cursor = h ? 'pointer' : ''; } }
   if (useComposer && composer) composer.render(); else renderer.render(scene, camera);
   updateHud(); updateDots(now); updateEndBtn(); if (PERF) perfHud(now);
-  if (fly && (Math.abs(sp - fly.target) < .012 || now - fly.t0 > 3500)) { const cb = fly.cb; fly = null; if (cb) setTimeout(cb, 350); }
+  if (fly && (Math.abs(sp - fly.target) < .012 || now - fly.t0 > 3500)) { const cb = fly.cb, id = fly.id; fly = null; if (id && canFx(id)) startFx(id, cb, now); else if (cb) setTimeout(cb, 350); }
 }
 const KX = CAM.map(k => k[0]), KY = CAM.map((k, i) => i / (CAM.length - 1));
 const KM = (() => {                                                           // nội suy đơn điệu Hermite (PCHIP): vận tốc liên tục tại mọi khung camera => hết giật cục
@@ -994,7 +1181,7 @@ function perfHud(now) {
 }
 function shouldRun() { const b = document.body.classList; return API.ready && !document.hidden && !b.contains('imm') && !b.contains('lm'); }
 function sync() {
-  const run = shouldRun(); setUiShown(run);
+  const run = shouldRun(); setUiShown(run); if (!run) abortFx();
   if (run && !raf) { resize(); sp = target; lookInit = false; last = performance.now(); raf = requestAnimationFrame(tick); }
   else if (!run && raf) { cancelAnimationFrame(raf); raf = 0; keepP = sp; target = sp; SPR.vel = 0; }            // tạm dừng khi tab ẩn / mở trang con / chế độ danh sách
 }
@@ -1101,19 +1288,19 @@ async function boot() {
     if (!snapMoving) { snapMoving = true; snapFrom = snapRest; } snapT0 = t;
     if (pinned >= 0 && Math.abs(scroller.scrollTop / maxScroll - pinned) > .02) pinned = -1;
   }, { passive: true });
-  scroller.addEventListener('click', e => { if (N.edit()) return; const mid = pickMid(e.clientX, e.clientY); if (mid) N.go(mid); else active = null; });
+  scroller.addEventListener('click', e => { if (N.edit()) return; const mid = pickMid(e.clientX, e.clientY); if (mid) openMod(mid); else active = null; });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  resize(); renderer.compile(scene, camera);
+  fxInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   await wait(250); $('wload').classList.add('hide');
 }
 
-API.version = 'v6.1';
+API.version = 'v7';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
-  fly = { target: h.foc, cb, t0: performance.now() }; pinned = h.foc; snapMoving = false; snapRest = h.foc; scroller.scrollTo({ top: h.foc * maxScroll, behavior: 'smooth' });
+  fly = { target: h.foc, cb, id, t0: performance.now() }; pinned = h.foc; snapMoving = false; snapRest = h.foc; scroller.scrollTo({ top: h.foc * maxScroll, behavior: 'smooth' });
 };
 API.showGate = function () { if (UI.gate) { document.body.classList.remove(LIST_CLASS); setGate(true); } };   // mở lại hộp hỏi Trẻ / Có tuổi
 API.toTop = function () { if (API.ready) scroller.scrollTo({ top: 0, behavior: 'smooth' }); };
