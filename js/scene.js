@@ -4,6 +4,7 @@
    Mọi chỗ có thể chỉnh nằm ở 3 khối đầu: SCENES, CAM, HOT
    [v5 — sửa giật/lag/lóa] xem mục 'V5' trong HANDOFF.md. Thêm ?perf=1 vào URL để hiện bảng FPS.
    [v6 — cổng chọn Trẻ / Có tuổi + nút 'Xem dạng danh sách' ở cuối] xem mục 'GATE' bên dưới (buildGate).
+   [v6.1 — chống lỗi không thấy cổng: bọc buildGate bằng try/catch + log console; thêm World.version; index.html nạp scene.js kèm ?v=6.1 để khỏi dính cache]
    ========================================================================== */
 import * as THREE from 'three';
 
@@ -1103,10 +1104,12 @@ async function boot() {
   scroller.addEventListener('click', e => { if (N.edit()) return; const mid = pickMid(e.clientX, e.clientY); if (mid) N.go(mid); else active = null; });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  resize(); renderer.compile(scene, camera); buildGate();
+  resize(); renderer.compile(scene, camera);
+  try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   await wait(250); $('wload').classList.add('hide');
 }
 
+API.version = 'v6.1';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
