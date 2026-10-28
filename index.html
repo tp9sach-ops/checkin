@@ -823,7 +823,7 @@ if(location.hash==="#install")setTimeout(()=>go('kt'),700);
 
 /* ===== CHẾ ĐỘ 3D / DANH SÁCH ===== */
 /* Cầu nối cho /js/scene.js: không đổi MODS, go(), effUrl(), vis() */
-window.NINE={mods:()=>MODS,go:id=>go(id),url:m=>effUrl(m),vis:m=>vis(m),admin:()=>ADMIN,edit:()=>EDIT};
+window.NINE={mods:()=>MODS,go:id=>go(id),url:m=>effUrl(m),vis:m=>vis(m),admin:()=>ADMIN,edit:()=>EDIT,apply:()=>applyContent()};
 const VKEY='ck9view';
 function vGet(){try{return localStorage.getItem(VKEY)}catch(e){return null}}
 function vSet(v){try{localStorage.setItem(VKEY,v)}catch(e){}}
@@ -832,7 +832,7 @@ const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let VIEW='list',WLOAD=null;
 function load3d(){
  if(WLOAD)return WLOAD;
- WLOAD=import('./js/scene.js?v=10').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
+ WLOAD=import('./js/scene.js?v=11').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
  return WLOAD}
 function setView(v,save){
  if(v==='3d'&&!GL_OK){v='list';toast('Thiết bị không chạy được cảnh 3D, dùng chế độ danh sách')}
