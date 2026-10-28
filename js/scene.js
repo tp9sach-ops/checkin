@@ -3,6 +3,7 @@
    Đặt tại: /js/scene.js . index.html nạp bằng import('./js/scene.js') và gọi World.start()
    Mọi chỗ có thể chỉnh nằm ở 3 khối đầu: SCENES, CAM, HOT
    [v5 — sửa giật/lag/lóa] xem mục 'V5' trong HANDOFF.md. Thêm ?perf=1 vào URL để hiện bảng FPS.
+   [v6 — cổng chọn Trẻ / Có tuổi + nút 'Xem dạng danh sách' ở cuối] xem mục 'GATE' bên dưới (buildGate).
    ========================================================================== */
 import * as THREE from 'three';
 
@@ -920,7 +921,7 @@ function tick(now) {
   // rê chuột lên vật thể 3D
   if (needRay && ptrXY) { needRay = false; const h = pickMid(ptrXY[0], ptrXY[1]); if (h !== hover) { hover = h; scroller.style.cursor = h ? 'pointer' : ''; } }
   if (useComposer && composer) composer.render(); else renderer.render(scene, camera);
-  updateHud(); updateDots(now); if (PERF) perfHud(now);
+  updateHud(); updateDots(now); updateEndBtn(); if (PERF) perfHud(now);
   if (fly && (Math.abs(sp - fly.target) < .012 || now - fly.t0 > 3500)) { const cb = fly.cb; fly = null; if (cb) setTimeout(cb, 350); }
 }
 const KX = CAM.map(k => k[0]), KY = CAM.map((k, i) => i / (CAM.length - 1));
@@ -992,12 +993,67 @@ function perfHud(now) {
 }
 function shouldRun() { const b = document.body.classList; return API.ready && !document.hidden && !b.contains('imm') && !b.contains('lm'); }
 function sync() {
-  const run = shouldRun();
+  const run = shouldRun(); setUiShown(run);
   if (run && !raf) { resize(); sp = target; lookInit = false; last = performance.now(); raf = requestAnimationFrame(tick); }
   else if (!run && raf) { cancelAnimationFrame(raf); raf = 0; keepP = sp; target = sp; SPR.vel = 0; }            // tạm dừng khi tab ẩn / mở trang con / chế độ danh sách
 }
 
 /* ============================ KHỞI TẠO ============================ */
+
+/* ============================ V6: CỔNG CHỌN "TRẺ / CÓ TUỔI" + NÚT DANH SÁCH Ở CUỐI ============================
+   - Mới vào: vẫn thấy cửa hàng 3D (camera ở tiến độ 0), phủ thêm hộp hỏi "Bạn là người…?" — cuộn bị khóa tới khi chọn.
+   - Chọn "Trẻ"      => vào 3D như cũ.
+   - Chọn "Có tuổi"  => bật chế độ danh sách: thêm class LIST_CLASS vào <body> (index.html đã dùng class này: scene.js tự dừng khi có nó).
+   - Cuối hành trình 3D (tiến độ > 95%) hiện nút "Xem bằng dạng danh sách".
+   Chỉnh nhanh: LIST_CLASS (tên class danh sách), END_BTN_BOTTOM (khoảng cách nút tới đáy), chữ trong GATE_TXT. */
+const LIST_CLASS = 'lm', END_BTN_BOTTOM = '24px';
+const GATE_TXT = { title: 'Bạn là người…?', young: 'Trẻ', youngSub: 'Xem cửa hàng 3D', old: 'Có tuổi', oldSub: 'Xem dạng danh sách, chữ lớn dễ đọc', end: 'Xem bằng dạng danh sách' };
+const UI = { gate: null, btn: null, open: false, prevOverflow: '', endK: '' };
+function enterList() { document.body.classList.add(LIST_CLASS); }               // index.html lo phần hiển thị danh sách; MutationObserver trong boot() sẽ tự dừng 3D
+function setGate(open) {
+  UI.open = open; if (!UI.gate) return;
+  if (open) { UI.prevOverflow = scroller.style.overflowY; scroller.style.overflowY = 'hidden'; UI.gate.hidden = false; UI.gate.classList.remove('out'); requestAnimationFrame(() => UI.gate.classList.add('in')); }
+  else { scroller.style.overflowY = UI.prevOverflow; UI.gate.classList.remove('in'); UI.gate.classList.add('out'); setTimeout(() => { if (!UI.open) UI.gate.hidden = true; }, 450); }
+}
+function buildGate() {
+  if (UI.gate) return;
+  const css = document.createElement('style'); css.id = 'v6css';
+  css.textContent = `
+#agate{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;padding:16px 16px max(20px,env(safe-area-inset-bottom));box-sizing:border-box;font-family:${FONT};
+  background:linear-gradient(to top,rgba(14,10,4,.78) 0%,rgba(14,10,4,.45) 38%,rgba(14,10,4,0) 70%);opacity:0;transition:opacity .45s ease}
+#agate.in{opacity:1}#agate.out{opacity:0;pointer-events:none}#agate[hidden]{display:none}
+#agate .box{width:min(620px,100%);text-align:center;color:#fff}
+#agate h2{margin:0 0 14px;font-size:clamp(24px,5.4vw,34px);font-weight:800;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+#agate .row{display:flex;gap:12px}
+#agate button{flex:1;min-height:74px;border:0;border-radius:18px;cursor:pointer;font:inherit;padding:10px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);transition:transform .15s}
+#agate button:active{transform:scale(.97)}#agate button:focus-visible{outline:4px solid #fff;outline-offset:3px}
+#agate .y{background:#F2B705;color:#2a1c00}#agate .o{background:#1f7a3a;color:#fff}
+#agate b{font-size:clamp(22px,5vw,28px);font-weight:800}#agate small{font-size:clamp(13px,3.3vw,15px);font-weight:600;opacity:.88}
+@media(max-width:480px){#agate .row{flex-direction:column}}
+#alist{position:fixed;left:50%;bottom:calc(${END_BTN_BOTTOM} + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:45;border:0;border-radius:999px;padding:16px 28px;cursor:pointer;
+  font:800 clamp(17px,4.4vw,20px) ${FONT};background:#F2B705;color:#2a1c00;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;visibility:hidden;pointer-events:none;white-space:nowrap}
+#alist:focus-visible{outline:4px solid #fff;outline-offset:3px}`;
+  document.head.appendChild(css);
+  const g = document.createElement('div'); g.id = 'agate'; g.hidden = true; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true'); g.setAttribute('aria-label', GATE_TXT.title);
+  g.innerHTML = `<div class="box"><h2>${GATE_TXT.title}</h2><div class="row"><button type="button" class="y" data-k="y"><b>${GATE_TXT.young}</b><small>${GATE_TXT.youngSub}</small></button><button type="button" class="o" data-k="o"><b>${GATE_TXT.old}</b><small>${GATE_TXT.oldSub}</small></button></div></div>`;
+  g.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; setGate(false); if (b.dataset.k === 'o') enterList(); });
+  document.body.appendChild(g); UI.gate = g;
+  const b = document.createElement('button'); b.id = 'alist'; b.type = 'button'; b.textContent = '📋 ' + GATE_TXT.end; b.addEventListener('click', enterList);
+  document.body.appendChild(b); UI.btn = b;
+  if (!(N.edit && N.edit())) setGate(true);                                      // quản trị viên đang ở chế độ sửa thì khỏi hỏi
+}
+function setUiShown(run) {                                                         // gọi từ sync(): ẩn cổng + nút khi đang ở danh sách / trang con / tab ẩn
+  if (!UI.gate) return;
+  if (document.hidden) return;
+  const on = !document.body.classList.contains(LIST_CLASS) && !document.body.classList.contains('imm');
+  UI.gate.style.display = on ? '' : 'none'; UI.btn.style.display = on ? '' : 'none';
+  if (!on && UI.open) { UI.open = false; scroller.style.overflowY = UI.prevOverflow; UI.gate.hidden = true; }   // vào danh sách bằng đường khác thì mở khóa cuộn
+}
+function updateEndBtn() {
+  if (!UI.btn) return; const e = sm((sp - .955) / .035), k = e.toFixed(2); if (k === UI.endK) return; UI.endK = k;
+  UI.btn.style.opacity = k; UI.btn.style.visibility = e < .02 ? 'hidden' : 'visible'; UI.btn.style.pointerEvents = e > .5 ? 'auto' : 'none';
+}
 const wait = ms => new Promise(r => setTimeout(r, ms));
 async function boot() {
   world = $('world'); scroller = $('scroller'); stk = $('stk'); spc = $('spc'); canvas = document.createElement('canvas'); $('wcv').appendChild(canvas);
@@ -1047,7 +1103,7 @@ async function boot() {
   scroller.addEventListener('click', e => { if (N.edit()) return; const mid = pickMid(e.clientX, e.clientY); if (mid) N.go(mid); else active = null; });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  resize(); renderer.compile(scene, camera);
+  resize(); renderer.compile(scene, camera); buildGate();
   await wait(250); $('wload').classList.add('hide');
 }
 
@@ -1056,5 +1112,6 @@ API.flyTo = function (id, cb) {                                                 
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
   fly = { target: h.foc, cb, t0: performance.now() }; pinned = h.foc; snapMoving = false; snapRest = h.foc; scroller.scrollTo({ top: h.foc * maxScroll, behavior: 'smooth' });
 };
+API.showGate = function () { if (UI.gate) { document.body.classList.remove(LIST_CLASS); setGate(true); } };   // mở lại hộp hỏi Trẻ / Có tuổi
 API.toTop = function () { if (API.ready) scroller.scrollTo({ top: 0, behavior: 'smooth' }); };
 export default API;
