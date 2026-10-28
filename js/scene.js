@@ -1209,7 +1209,7 @@ function doSnap() {
   if (bd < SNAP_R && bd > 1e-4) { snapRest = best; snapSkip = performance.now() + 90; scroller.style.scrollBehavior = 'auto'; scroller.scrollTop = best * maxScroll; }
   else snapRest = target;
 }
-const Q = { pr: 0, max: 1, min: .6, acc: 0, n: 0, good: 0, t: 0, up: 0 };            // chất lượng thích ứng: tự giảm độ phân giải/hiệu ứng khi máy yếu
+const Q = { warm: 0, pr: 0, max: 1, min: .85, acc: 0, n: 0, good: 0, t: 0, up: 0 };            // chất lượng thích ứng: tự giảm độ phân giải/hiệu ứng khi máy yếu
 const PERF = /[?&]perf/.test(location.search); let PERFEL = null; const PF = { n: 0, t: 0 };
 let rsT = 0; function resizeSoon() { clearTimeout(rsT); rsT = setTimeout(resize, 140); }
 function applyPR() {
@@ -1233,11 +1233,12 @@ function degrade() {
   else if (useComposer) useComposer = false;
 }
 function adapt(raw) {
+  if (performance.now() < Q.warm) { Q.n = 0; Q.acc = 0; return; }                            // 5 giây đầu: khung hình chậm do nạp texture/biên dịch, không tính để khỏi tụt độ nét
   if (raw > 250) { Q.n = 0; Q.acc = 0; return; }                                              // vừa mở lại tab / bị treo: bỏ qua
   Q.acc += raw; Q.n++; if (Q.n < 40) return;
   const avg = Q.acc / Q.n, now = performance.now(); Q.acc = 0; Q.n = 0;
   if (avg > 25) { Q.good = 0; if (now - Q.t > 1200) { Q.t = now; degrade(); } }
-  else if (avg < 18.5) { if (++Q.good >= 5 && Q.pr < Q.max - .01 && now - Q.t > 5000) { Q.good = 0; Q.t = now; Q.up = now; Q.pr = Math.min(Q.max, Q.pr + .1); applyPR(); } }
+  else if (avg < 18.5) { if (++Q.good >= 3 && Q.pr < Q.max - .01 && now - Q.t > 3000) { Q.good = 0; Q.t = now; Q.up = now; Q.pr = Math.min(Q.max, Q.pr + .1); applyPR(); } }
   else Q.good = 0;
 }
 function perfHud(now) {
@@ -1248,7 +1249,7 @@ function perfHud(now) {
 }
 function shouldRun() { const b = document.body.classList; return API.ready && !document.hidden && !b.contains('imm') && !b.contains('lm'); }
 function sync() {
-  const run = shouldRun(); setUiShown(run); if (!run) abortFx();
+  const run = shouldRun(); setUiShown(run); syncEdit(); if (!run) abortFx();
   if (run && !raf) { resize(); sp = target; lookInit = false; last = performance.now(); raf = requestAnimationFrame(tick); }
   else if (!run && raf) { cancelAnimationFrame(raf); raf = 0; keepP = sp; target = sp; SPR.vel = 0; }            // tạm dừng khi tab ẩn / mở trang con / chế độ danh sách
 }
@@ -1281,32 +1282,51 @@ function buildGate() {
 #agate h2{margin:0 0 3px;font-size:clamp(18px,4.2vw,24px);font-weight:800;text-shadow:0 2px 10px rgba(0,0,0,.75)}
 #agate p{margin:0 0 12px;font-size:clamp(12px,3vw,13.5px);font-weight:500;opacity:.92;text-shadow:0 1px 6px rgba(0,0,0,.75)}
 #agate .row{display:flex;gap:10px}
-#agate button{flex:1;min-height:56px;border:1.5px solid rgba(255,255,255,.55);border-radius:16px;cursor:pointer;font:inherit;color:#fff;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+#agate .opt{display:flex!important;flex-direction:column!important;flex:1;cursor:pointer;user-select:none;min-height:56px;border:1.5px solid rgba(255,255,255,.55);border-radius:16px;cursor:pointer;font:inherit;color:#fff;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   background:rgba(255,255,255,.1);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);box-shadow:0 6px 18px rgba(0,0,0,.18);
   transition:transform .25s cubic-bezier(.3,1.5,.5,1),background .25s,border-color .25s,box-shadow .25s;animation:aflt 3.6s ease-in-out infinite}
 #agate .o{animation-delay:-1.8s}
-#agate button:hover,#agate button:focus-visible{transform:translateY(-4px) scale(1.05);background:rgba(255,255,255,.22);border-color:#ffe08a;box-shadow:0 12px 26px rgba(0,0,0,.3),0 0 22px rgba(255,224,138,.45);outline:none}
-#agate button:active{transform:scale(.97)}
-#agate button:hover i,#agate button:focus-visible i{animation:awig .6s ease-in-out infinite}
+#agate .opt:hover,#agate .opt:focus-visible{transform:translateY(-4px) scale(1.05);background:rgba(255,255,255,.22);border-color:#ffe08a;box-shadow:0 12px 26px rgba(0,0,0,.3),0 0 22px rgba(255,224,138,.45);outline:none}
+#agate .opt:active{transform:scale(.97)}
+#agate .opt:hover i,#agate .opt:focus-visible i{animation:awig .6s ease-in-out infinite}
 #agate i{font-style:normal;font-size:clamp(20px,4.6vw,24px);display:inline-block;line-height:1}
 #agate b{font-size:clamp(15px,3.6vw,18px);font-weight:800;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 #agate small{font-size:clamp(11px,2.8vw,12.5px);font-weight:600;opacity:.92;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+#agate .opt b,#agate .opt small{display:block;text-align:center}
+#agate.ed{pointer-events:none}#agate.ed [data-k]{pointer-events:auto;user-select:text}#agate.ed .opt{animation:none;cursor:text}
+#alist.ed{opacity:1!important;visibility:visible!important;pointer-events:auto!important}#alist [data-k]{cursor:inherit}
 @keyframes aflt{0%,100%{translate:0 0}50%{translate:0 -3px}}
 @keyframes awig{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
-@media(prefers-reduced-motion:reduce){#agate button,#agate button:hover i{animation:none}}
+@media(prefers-reduced-motion:reduce){#agate .opt,#agate .opt:hover i{animation:none}}
 @media(max-width:480px){#agate .row{flex-direction:column}}
 #alist{position:fixed;left:50%;bottom:calc(${END_BTN_BOTTOM} + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:45;border:0;border-radius:999px;padding:16px 28px;cursor:pointer;
   font:800 clamp(17px,4.4vw,20px) ${FONT};background:#F2B705;color:#2a1c00;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;visibility:hidden;pointer-events:none;white-space:nowrap}
 #alist:focus-visible{outline:4px solid #fff;outline-offset:3px}`;
   document.head.appendChild(css);
   const g = document.createElement('div'); g.id = 'agate'; g.hidden = true; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true'); g.setAttribute('aria-label', GATE_TXT.title);
-  g.innerHTML = `<div class="box"><h2>${GATE_TXT.title}</h2><p>${GATE_TXT.sub}</p><div class="row"><button type="button" class="y" data-k="y"><i>${GATE_TXT.youngIc}</i><b>${GATE_TXT.young}</b><small>${GATE_TXT.youngSub}</small></button><button type="button" class="o" data-k="o"><i>${GATE_TXT.oldIc}</i><b>${GATE_TXT.old}</b><small>${GATE_TXT.oldSub}</small></button></div></div>`;
-  g.addEventListener('pointerover', e => { const b = e.target.closest('button'); if (b) poke(b.dataset.k === 'y' ? 1.3 : .7); });   // rê chuột qua nút: gió nổi lên, hổ vàng lắc người
-  g.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; setGate(false); if (b.dataset.k === 'o') enterList(); });
+  g.innerHTML = `<div class="box"><h2 data-k="gate.title">${GATE_TXT.title}</h2><p data-k="gate.sub">${GATE_TXT.sub}</p><div class="row"><div class="opt y" role="button" tabindex="0" data-g="y"><i>${GATE_TXT.youngIc}</i><b data-k="gate.y.t">${GATE_TXT.young}</b><small data-k="gate.y.s">${GATE_TXT.youngSub}</small></div><div class="opt o" role="button" tabindex="0" data-g="o"><i>${GATE_TXT.oldIc}</i><b data-k="gate.o.t">${GATE_TXT.old}</b><small data-k="gate.o.s">${GATE_TXT.oldSub}</small></div></div></div>`;
+  const isEd = () => document.body.classList.contains('edit');                          // đang ở chế độ quản trị sửa chữ: bấm vào nút chỉ để sửa chữ, không chọn
+  const pick = b => { if (isEd()) return; setGate(false); if (b.dataset.g === 'o') enterList(); };
+  g.addEventListener('pointerover', e => { const b = e.target.closest('.opt'); if (b && !isEd()) poke(b.dataset.g === 'y' ? 1.3 : .7); });   // rê chuột qua nút: gió nổi lên, hổ vàng lắc người
+  g.addEventListener('click', e => { const b = e.target.closest('.opt'); if (b) pick(b); });
+  g.addEventListener('keydown', e => { if (e.key !== 'Enter' && e.key !== ' ') return; const b = e.target.closest && e.target.closest('.opt'); if (b && e.target === b) { e.preventDefault(); pick(b); } });
   document.body.appendChild(g); UI.gate = g;
-  const b = document.createElement('button'); b.id = 'alist'; b.type = 'button'; b.textContent = '📋 ' + GATE_TXT.end; b.addEventListener('click', enterList);
+  const b = document.createElement('div'); b.id = 'alist'; b.setAttribute('role', 'button'); b.tabIndex = 0; b.innerHTML = '<span>📋 </span><span data-k="gate.end">' + GATE_TXT.end + '</span>';
+  b.addEventListener('click', () => { if (!isEd()) enterList(); });
+  b.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === b && !isEd()) { e.preventDefault(); enterList(); } });
   document.body.appendChild(b); UI.btn = b;
-  if (!(N.edit && N.edit())) setGate(true);                                      // quản trị viên đang ở chế độ sửa thì khỏi hỏi
+  try { if (N.apply) N.apply(); } catch (e) { }                                    // nạp chữ đã lưu (nếu quản trị viên đã sửa) vào các phần tử data-k của cổng
+  syncEdit();
+}
+function openGate() {                                                              // gọi SAU khi màn hình tải đã tắt, tránh hộp chọn nằm trên nền đen
+  if (UI.gateShown || !UI.gate) return; UI.gateShown = true;
+  if (!(N.edit && N.edit())) setGate(true);                                        // quản trị viên đang ở chế độ sửa thì khỏi hỏi
+}
+function syncEdit() {                                                              // quản trị viên bật/tắt "Chỉnh sửa chữ": hiện cổng + nút cuối để sửa chữ trực tiếp
+  if (!UI.gate) return; const ed = document.body.classList.contains('edit'); if (ed === !!UI.ed) return; UI.ed = ed;
+  UI.gate.classList.toggle('ed', ed); UI.btn.classList.toggle('ed', ed);
+  if (ed && UI.gate.hidden) { UI.edShown = true; UI.gate.hidden = false; UI.gate.classList.remove('out'); requestAnimationFrame(() => UI.gate.classList.add('in')); }
+  else if (!ed && UI.edShown) { UI.edShown = false; if (!UI.open) { UI.gate.classList.remove('in'); UI.gate.classList.add('out'); setTimeout(() => { if (!UI.open && !UI.ed) UI.gate.hidden = true; }, 450); } }
 }
 function setUiShown(run) {                                                         // gọi từ sync(): ẩn cổng + nút khi đang ở danh sách / trang con / tab ẩn
   if (!UI.gate) return;
@@ -1339,7 +1359,7 @@ async function boot() {
   if (!LOW) {                                                                                      // bloom nhẹ, chỉ máy mạnh
     try {
       const [a, b, c, d, e2] = await Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
-      composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 })); composer.addPass(new b.RenderPass(scene, camera));
+      composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 2 })); composer.addPass(new b.RenderPass(scene, camera));
       bloom = new c.UnrealBloomPass(new THREE.Vector2(256, 256), .28, .5, 1.3); composer.addPass(bloom); composer.addPass(new d.OutputPass());
       composer.addPass(film = new e2.ShaderPass({                                                         // tông phim: vignette nhẹ, tương phản mềm, ấm vàng ở vùng sáng
         uniforms: { tDiffuse: { value: null }, px: { value: new THREE.Vector2(1 / 1280, 1 / 720) } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -1375,10 +1395,10 @@ async function boot() {
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
   await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
-  await fin('start'); $('wload').classList.add('hide');
+  await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 5000; setTimeout(openGate, 350);
 }
 
-API.version = 'v10';
+API.version = 'v11';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
