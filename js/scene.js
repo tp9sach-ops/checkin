@@ -163,12 +163,13 @@ function tree(x, z, k, seed) {                                                  
   B(g, std(0x3b2a1c, { roughness: 1 }), [1.7, .18, 1.7], [0, .1, 0]);
   B(g, M.dark, [2.3, .05, .12], [0, .17, 1.12]); B(g, M.dark, [2.3, .05, .12], [0, .17, -1.12]); B(g, M.dark, [.12, .05, 2.3], [1.12, .17, 0]); B(g, M.dark, [.12, .05, 2.3], [-1.12, .17, 0]);
   const top = [.1, 3.1, .05];
-  limb(g, bk, [0, .1, 0], top, .3, .15).castShadow = !LOW;
-  [[-1.3, 4.3, .4], [1.2, 4.5, -.5], [.3, 4.7, 1.2], [-.4, 4.4, -1.2]].forEach(b => limb(g, bk, top, b, .13, .05));
-  const TR = { g, k, ry: g.rotation.y, blobs: [], exc: 0 }; TREES.push(TR);                                  // V8: gió lay tán lá
+  const pr = new THREE.Group(); g.add(pr);                                                                   // V13: thân + cành + tán lá dựng bằng khối nằm trong `pr` => ẩn đi khi cây .glb nạp xong
+  limb(pr, bk, [0, .1, 0], top, .3, .15).castShadow = !LOW;
+  [[-1.3, 4.3, .4], [1.2, 4.5, -.5], [.3, 4.7, 1.2], [-.4, 4.4, -1.2]].forEach(b => limb(pr, bk, top, b, .13, .05));
+  const TR = { g, k, ry: g.rotation.y, blobs: [], exc: 0, proc: pr, sw: null }; TREES.push(TR);               // V8: gió lay tán lá
   const blob = (px, py, pz, s) => {
     const m = new THREE.Mesh(F.geos[(r() * 3) | 0], F.mat); m.position.set(px, py, pz); TR.blobs.push({ m, p0: m.position.clone(), ph: r() * 6.28, rz: 0 });
-    m.scale.set(s * (1 + r() * .2), s * (.85 + r() * .2), s * (1 + r() * .2)); m.rotation.y = r() * 6.28; m.castShadow = !LOW; g.add(m);
+    m.scale.set(s * (1 + r() * .2), s * (.85 + r() * .2), s * (1 + r() * .2)); m.rotation.y = r() * 6.28; m.castShadow = !LOW; pr.add(m);
   };
   blob(0, 4.9, 0, 1.9);
   for (let i = 0; i < 13; i++) { const a = r() * 6.28, rad = .9 + r() * 1.2; blob(Math.cos(a) * rad, 3.9 + r() * 1.9, Math.sin(a) * rad, .95 + r() * .55); }
@@ -1109,6 +1110,9 @@ function windStep(now, dt) {
     const p = T.g.position, hit = hitPtr(p.x, 5 * T.k, p.z, Math.abs(p.x) < 20 ? .2 : .1), tg = hit ? mv : 0;
     T.exc += (tg - T.exc) * (1 - Math.exp(-dt * (tg > T.exc ? 6 : 1.2)));
     const cs = Math.cos(T.ry), sn = Math.sin(T.ry), ex = 1 + T.exc * 2.4, wx = 1, wz = .35;
+    if (T.sw) {                                                                   // V13: cây 3D (.glb) — đẩy thông số gió vào shader, không phải tính từng cụm lá
+      T.sw.uT.value = t; T.sw.uS.value = sw; T.sw.uA.value = gl * ex; T.sw.uD.value.set(wx * cs - wz * sn, wx * sn + wz * cs); return;
+    }
     T.blobs.forEach(b => {
       const h = Math.max(0, (b.p0.y - 3) / 3) + .35, w1 = Math.sin(t * 1.7 + b.ph), w2 = Math.sin(t * 3.3 + b.ph * 1.7);
       const a = (sw * .07 + w1 * .03 + w2 * .014) * h * ex * gl / T.k, ox = a * wx, oz = a * wz;
@@ -1493,7 +1497,8 @@ function lifeStep(now, dt) {
     const tr = w.dir > 0 ? Math.PI / 2 : -Math.PI / 2; w.ry += (tr - w.ry) * Math.min(1, dt * 5);
     const sw = w.pause > 0 ? 0 : Math.sin(w.ph);
     p.lL.rotation.x = sw * .62; p.lR.rotation.x = -sw * .62; p.aL.rotation.x = -sw * .5; p.aR.rotation.x = sw * .5;
-    p.g.position.set(w.x, Math.abs(sw) * .03, w.z); p.g.rotation.y = w.ry; p.g.updateMatrixWorld(true);
+    if (p.leg) p.leg.value = sw;                                                                          // V13: người 3D (.glb) — shader xoay 2 chân, thân hạ thấp nhẹ khi dạng chân
+    p.g.position.set(w.x, p.leg ? -p.drop * (1 - Math.cos(.32 * Math.abs(sw))) : Math.abs(sw) * .03, w.z); p.g.rotation.y = w.ry; p.g.updateMatrixWorld(true);
   });
   // neon nhấp nháy + dây đèn đuổi nhau + cờ bay
   if (LIFE.neon) LIFE.neon.emissiveIntensity = 1.5 + Math.sin(t * 3) * .18 + (Math.sin(t * 17) > .985 ? -.9 : 0);
@@ -1553,7 +1558,7 @@ const loadGLB = url => new Promise(res => { if (!GLTF) return res(null); GLTF.lo
 function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
 let GLBP = null;
 function glbPrefetch() {                                                                       // nạp xe + trạm song song, bắt đầu ngay từ đầu boot() để chồng thời gian với lúc dựng cảnh
-  return (async () => { await glbInit(); if (!GLTF) return [null, null]; return Promise.all([loadGLB(BUS_GLB.url), loadGLB(STOP_GLB.url)]); })();
+  return (async () => { await glbInit(); if (!GLTF) return [null, null]; ASSETP = crowdLoad(); return Promise.all([loadGLB(BUS_GLB.url), loadGLB(STOP_GLB.url)]); })();
 }
 function liteMats(root, o) {                                                                    // giảm tải GPU cho mô hình ngoài: Physical -> Standard, bỏ map thừa, mặt đơn nếu không trong suốt
   root.traverse(n => {
@@ -1573,6 +1578,103 @@ function liteMats(root, o) {                                                    
 function warmTex(root) {                                                                        // đẩy texture lên GPU trước khi hiện => không giật ở khung hình đầu tiên
   root.traverse(n => { if (!n.isMesh) return; (Array.isArray(n.material) ? n.material : [n.material]).forEach(m => { ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'].forEach(k => { if (m[k]) { try { renderer.initTexture(m[k]); } catch (e) { } } }); }); });
 }
+/* ==========================================================================
+   V13: NGƯỜI + CÂY BẰNG MÔ HÌNH 3D (.glb) — thay người và cây dựng bằng khối
+   - File nằm trong assets/models/ (đã nén Draco + texture WebP 1024, tổng ~2 MB): person1..person8.glb, tree_linden.glb, tree_lowpoly.glb
+   - Tải lỗi / thiếu file => tự giữ bản dựng bằng khối cũ (không hỏng cảnh).
+   - Người đi bộ: mô hình tĩnh nên hai chân xoay bằng vertex shader (kéo - dạng chân) + thân hạ nhẹ theo nhịp bước.
+   - Cây: lá lay theo gió bằng vertex shader (cùng thông số gió WIND như trước: rê chuột qua cây vẫn làm cây rung mạnh hơn).
+   Chỉnh nhanh: CROWD.walkers / waiters (m = số thứ tự file người, 0 = person1.glb; h = chiều cao thật (m)), CROWD.treeSet (m: 0 = linden, 1 = low-poly; h = chiều cao cây (m)).
+   ========================================================================== */
+const CROWD = {
+  dir: 'assets/models/',
+  people: ['person1.glb', 'person2.glb', 'person3.glb', 'person4.glb', 'person5.glb', 'person6.glb', 'person7.glb', 'person8.glb'],
+  trees: ['tree_linden.glb', 'tree_lowpoly.glb'],
+  walkers: [{ m: 0, h: 1.66 }, { m: 3, h: 1.74 }, { m: 6, h: 1.78 }, { m: 1, h: 1.68, dir: -1, v: .95, x: -4 }],      // 3 người đầu thay 3 người đi bộ cũ; người thứ 4 là thêm mới
+  lanes: [9.3, 9.8, 10.2, 10.55],                                                                                    // z của từng người đi bộ trên vỉa hè (cách nhau để không đi xuyên nhau)
+  waiters: [{ m: 2, h: 1.76, x: -10.0, z: 12.62, ry: .1 }, { m: 4, h: 1.62, x: -9.1, z: 12.68, ry: -.2 }, { m: 5, h: 1.72, x: -8.2, z: 12.62, ry: .15 }, { m: 7, h: 1.64, x: -7.3, z: 12.68, ry: -.1 }],   // đứng chờ xe ở trạm
+  treeSet: [{ m: 0, h: 6.4 }, { m: 1, h: 6.8 }, { m: 1, h: 6.8 }, { m: 0, h: 6.4 }],                                // theo thứ tự 4 cây ven đường: (-13.5), (13.5), (-24), (24)
+  P: [], T: []
+};
+let ASSETP = null;
+function crowdLoad() { return Promise.all([...CROWD.people, ...CROWD.trees].map(f => loadGLB(CROWD.dir + f))); }
+function bakeRoot(root) {                                                                       // đưa transform của node vào thẳng toạ độ đỉnh => mỗi mesh nằm ở gốc, dễ chuẩn hoá chiều cao
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), mt = new THREE.Matrix4(), ms = [];
+  root.traverse(o => { if (o.isMesh) ms.push(o); });
+  ms.forEach(o => { mt.multiplyMatrices(inv, o.matrixWorld); o.geometry = o.geometry.clone(); o.geometry.applyMatrix4(mt); o.position.set(0, 0, 0); o.rotation.set(0, 0, 0); o.scale.set(1, 1, 1); o.updateMatrix(); root.add(o); });
+  root.children.slice().forEach(c => { if (!c.isMesh) root.remove(c); });
+  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.scale.set(1, 1, 1); root.updateMatrixWorld(true);
+  return ms;
+}
+function bounds(ms) { const b = new THREE.Box3(); ms.forEach(o => { o.geometry.computeBoundingBox(); b.union(o.geometry.boundingBox); }); return b; }
+function tune(m) { if (m.map) m.map.anisotropy = LOW ? 1 : 4; m.roughness = .85; m.metalness = 0; return m; }
+function legShader(m, u) {                                                                      // người: chân trái/phải xoay ngược chiều quanh hông (y = .52 chiều cao), mô hình đã chuẩn hoá cao = 1
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uS = u;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uS;').replace('#include <begin_vertex>', `#include <begin_vertex>
+      { float w = 1.0 - smoothstep(.44, .54, transformed.y); float s = clamp(transformed.x / .03, -1.0, 1.0); float a = uS * .32 * s * w;
+        float yy = transformed.y - .52, zz = transformed.z, c = cos(a), sn = sin(a); transformed.y = .52 + yy * c - zz * sn; transformed.z = zz * c + yy * sn; }`);
+  };
+  m.customProgramCacheKey = () => 'v13leg'; m.needsUpdate = true;
+}
+function swayShader(m, U) {                                                                     // cây: dịch ngọn theo gió, càng cao càng nhiều (hh = (y/H)^2); mô hình đã chuẩn hoá cao = 1
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uS, uA; uniform vec2 uD;').replace('#include <begin_vertex>', `#include <begin_vertex>
+      { float hh = clamp(transformed.y, 0.0, 1.0); hh *= hh; float ph = transformed.x * 6.0 + transformed.z * 4.5;
+        float w1 = sin(uT * 1.7 + ph), w2 = sin(uT * 3.3 + ph * 1.7); float a = (uS * .07 + w1 * .03 + w2 * .014) * uA * hh * .3;
+        transformed.x += uD.x * a; transformed.z += uD.y * a; transformed.y += w2 * .0012 * uA * hh; }`);
+  };
+  m.customProgramCacheKey = () => 'v13sway'; m.needsUpdate = true;
+}
+function makePersonGLB(i, h, walk) {                                                            // trả về { g, lL, lR, aL, aR, leg?, drop? } cùng giao diện với person() cũ
+  const gl = CROWD.P[i]; if (!gl || gl.scene.userData.used) return null; gl.scene.userData.used = true;
+  const root = gl.scene, ms = bakeRoot(root), b = bounds(ms), c = b.getCenter(new THREE.Vector3()), k = 1 / Math.max(b.max.y - b.min.y, 1e-4), U = { value: 0 };
+  ms.forEach(o => {
+    o.geometry.translate(-c.x, -b.min.y, -c.z); o.geometry.scale(k, k, k); o.castShadow = false; o.receiveShadow = false; o.frustumCulled = !walk;
+    const m = tune(o.material); m.side = THREE.DoubleSide; if (walk) legShader(m, U);
+  });
+  root.scale.setScalar(h); root.updateMatrix(); const g = new THREE.Group(); g.add(root);
+  return { g, lL: new THREE.Object3D(), lR: new THREE.Object3D(), aL: new THREE.Object3D(), aR: new THREE.Object3D(), leg: walk ? U : null, drop: .52 * h };
+}
+function makeTreeGLB(kind, h) {                                                                 // trả về { root, U } — geometry chuẩn hoá 1 lần, dùng chung giữa các cây; vật liệu nhân bản riêng từng cây
+  const gl = CROWD.T[kind]; if (!gl) return null;
+  if (!gl.scene.userData.prep) {
+    const ms = bakeRoot(gl.scene), b = bounds(ms), H = Math.max(b.max.y - b.min.y, 1e-4), lim = b.min.y + H * .05; let sx = 0, sz = 0, n = 0;
+    ms.forEach(o => { const a = o.geometry.attributes.position; for (let j = 0; j < a.count; j++) if (a.getY(j) < lim) { sx += a.getX(j); sz += a.getZ(j); n++; } });
+    const cx = n ? sx / n : 0, cz = n ? sz / n : 0;                                                // gốc thân = trung bình các đỉnh sát đất (tán lá lệch 1 bên cũng không làm lệch gốc)
+    ms.forEach(o => { o.geometry.translate(-cx, -b.min.y, -cz); o.geometry.scale(1 / H, 1 / H, 1 / H); o.castShadow = !LOW; o.receiveShadow = false; });
+    gl.scene.userData.prep = true;
+  }
+  const root = gl.scene.clone(true), U = { uT: { value: 0 }, uS: { value: 0 }, uA: { value: 1 }, uD: { value: new THREE.Vector2(1, .35) } };
+  root.traverse(o => { if (o.isMesh) { o.material = tune(o.material.clone()); o.material.roughness = .9; swayShader(o.material, U); } });
+  root.scale.setScalar(h); root.position.y = .12; root.updateMatrix();
+  return { root, U };
+}
+async function crowdStart() {
+  const A = await (ASSETP || (ASSETP = crowdLoad())), np = CROWD.people.length; CROWD.P = A.slice(0, np); CROWD.T = A.slice(np);
+  if (!CROWD.P.some(Boolean) && !CROWD.T.some(Boolean)) return;
+  // --- cây ven đường
+  TREES.forEach((T, n) => {
+    const d = CROWD.treeSet[n]; if (!d) return; const t = makeTreeGLB(d.m, d.h); if (!t) return;
+    T.g.add(t.root); T.proc.visible = false; T.blobs.length = 0; T.sw = t.U; T.g.updateMatrixWorld(true);
+  });
+  // --- người đi bộ (3 người cũ được thay tại chỗ; người thứ 4 thêm mới)
+  CROWD.walkers.forEach((d, n) => {
+    const q = makePersonGLB(d.m, d.h, true); if (!q) return; const w = LIFE.walk[n];
+    if (w) { const o = w.p.g; q.g.position.copy(o.position); q.g.rotation.copy(o.rotation); scene.remove(o); w.p = q; w.z = CROWD.lanes[n] != null ? CROWD.lanes[n] : w.z; }
+    else { const dir = d.dir || 1, ry = dir > 0 ? Math.PI / 2 : -Math.PI / 2; q.g.rotation.y = ry; q.g.position.x = d.x || 0; LIFE.walk.push({ p: q, z: CROWD.lanes[n] || 10, dir, v: d.v || .9, x: d.x || 0, ph: Math.random() * 6, pause: 0, ry }); }
+    q.g.position.z = CROWD.lanes[n] != null ? CROWD.lanes[n] : q.g.position.z; scene.add(q.g); q.g.updateMatrixWorld(true);
+  });
+  // --- người đứng chờ ở trạm: thay cả nhóm cũ
+  const nw = []; CROWD.waiters.forEach(d => {
+    const q = makePersonGLB(d.m, d.h, false); if (!q) return; q.g.position.set(d.x, 0, d.z); q.g.rotation.y = d.ry; scene.add(q.g); q.g.updateMatrixWorld(true); nw.push(q.g);
+  });
+  if (nw.length) { LIFE.wait.forEach(g => scene.remove(g)); LIFE.wait.length = 0; nw.forEach(g => LIFE.wait.push(g)); }
+  if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
+}
+
 async function glbStart() {
   const [g, sg] = await (GLBP || (GLBP = glbPrefetch()));
   if (g && LIFE.bus) {                                                                         // thay xe bus dựng bằng khối bằng mô hình thật
@@ -1604,6 +1706,7 @@ async function glbStart() {
     const m = x.scene; m.position.set(c.pos[0], c.pos[1], c.pos[2]); m.rotation.y = c.rotY || 0; m.scale.setScalar(c.scale || 1); scene.add(m); m.updateMatrixWorld(true); playClips(x, m);
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   }
+  try { await crowdStart(); } catch (e) { console.error('[9Sach] người/cây 3D lỗi, giữ bản dựng bằng khối:', e); }   // V13
   applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
 }
 
