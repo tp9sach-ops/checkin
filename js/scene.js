@@ -1471,15 +1471,15 @@ function lifeStep(now, dt) {
   LIFE.t += dt; const t = LIFE.t;
   MIXERS.forEach(mx => mx.update(dt));
   // xe bus
-  { const Bs = LIFE.bus, K = k12(), ph = busPhase(t), g = Bs.g, dx = Bs.px - ph.x; Bs.px = ph.x;
+  { const Bs = LIFE.bus, K = k12(), ph = busPhase(Bs.bt = (Bs.bt === undefined ? BUS_GLB.startT : Bs.bt) + dt), g = Bs.g, dx = Bs.px - ph.x; Bs.px = ph.x;
     const vis = ph.st !== 3 && Math.abs(ph.x) < 52; if (g.visible !== vis) g.visible = vis;
     if (vis) {
       if (Math.abs(dx) < 3) Bs.wh.forEach(w => { w.rotation.z -= dx / .52; });
       const want = ph.st === 1 ? -.014 : ph.st === 2 ? 0 : ph.u > BUSC.ta + BUSC.td ? .006 : 0; Bs.pitch += (want - Bs.pitch) * Math.min(1, dt * 4);
-      Bs.body.rotation.z = Bs.pitch * (Bs.pdir || 1); Bs.body.position.y = ph.st === 2 ? Math.sin(t * 38) * .004 : 0;
+      Bs.body.rotation.z = Bs.pitch * (Bs.pdir || 1); Bs.body.position.y = ph.st === 2 ? Math.sin(Bs.bt * 38) * .004 : 0;
       g.position.x = ph.x; g.updateMatrixWorld(true);
     }
-    const br = ph.st === 1 || ph.st === 2 ? 3.4 : .8, hz = ph.st === 2 && Math.floor(t * 2.6) % 2 ? 3 : .12;
+    const br = ph.st === 1 || ph.st === 2 ? 3.4 : .8, hz = ph.st === 2 && Math.floor(Bs.bt * 2.6) % 2 ? 3 : .12;
     if (K.brake.emissiveIntensity !== br) K.brake.emissiveIntensity = br; if (K.ind.emissiveIntensity !== hz) K.ind.emissiveIntensity = hz;
     const wv = ph.u < BUSC.ta + BUSC.td * .35 || ph.u >= BUSC.ta + BUSC.td + BUSC.tb;                                 // khách chờ lên xe rồi biến mất, xe đi khuất mới có khách mới
     LIFE.wait.forEach(w => { if (w.visible !== wv) w.visible = wv; }); }
@@ -1521,7 +1521,7 @@ const IBL_ON = true, IBL_K = .5, IBL_HEMI = .55, GLB_ON = true;
    mirror:false = giữ nguyên mô hình (chữ trên thân xe đọc đúng), xe chạy từ trái sang phải (+x), cửa hướng về vỉa hè.
    mirror:true  = lật gương mô hình để xe chạy về -x như xe dựng bằng khối cũ (nhưng chữ trên thân xe bị ngược).
    door  = khoảng cách (m) từ tâm xe đến giữa cửa lên xe;  doorX = vị trí x trên đường mà cửa xe dừng đúng (giữa trạm). */
-const BUS_GLB = { url: 'assets/models/japanese_bus_toei_bus_tokyo.glb', len: 10.4, rotY: 0, y: 0, mirror: false, door: 4.1, doorX: -8.8 };
+const BUS_GLB = { url: 'assets/models/japanese_bus_toei_bus_tokyo.glb', len: 10.4, rotY: 0, y: 0, mirror: false, door: 4.1, doorX: -8.8, startT: 12 };   // startT = giây đã "chạy" của chu kỳ xe khi vào trang (12 = xe sắp vào khung hình; 0 = xe xuất hiện từ xa, ~13 giây sau mới thấy)
 /* TRẠM XE BUÝT: standard_bus_stop.glb (dài 4.84m, sâu 2.5m). x = tâm trạm; front = z của mép ngoài cùng (cột chắn) — vỉa hè kết thúc ở z=13.1;
    scale = tỉ lệ (0.85 để vừa vỉa hè); signX = vị trí mới của biển trụ "XE BUÝT" (tránh đè lên trạm). */
 const STOP_GLB = { url: 'assets/models/standard_bus_stop.glb', x: -8.6, front: 13.0, scale: .85, rotY: 0, signX: -11.4 };
@@ -1551,37 +1551,60 @@ async function glbInit() {
 }
 const loadGLB = url => new Promise(res => { if (!GLTF) return res(null); GLTF.load(url, g => res(g), undefined, () => res(null)); });
 function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
+let GLBP = null;
+function glbPrefetch() {                                                                       // nạp xe + trạm song song, bắt đầu ngay từ đầu boot() để chồng thời gian với lúc dựng cảnh
+  return (async () => { await glbInit(); if (!GLTF) return [null, null]; return Promise.all([loadGLB(BUS_GLB.url), loadGLB(STOP_GLB.url)]); })();
+}
+function liteMats(root, o) {                                                                    // giảm tải GPU cho mô hình ngoài: Physical -> Standard, bỏ map thừa, mặt đơn nếu không trong suốt
+  root.traverse(n => {
+    if (!n.isMesh) return;
+    n.matrixAutoUpdate = false; n.updateMatrix();
+    (Array.isArray(n.material) ? n.material : [n.material]).forEach((m, i, arr) => {
+      let t = m;
+      if (m.isMeshPhysicalMaterial) { t = new THREE.MeshStandardMaterial(); t.copy(m); t.name = m.name; }
+      if (o.noNormal || LOW) t.normalMap = null;
+      if (o.noEmissive) { t.emissiveMap = null; t.emissive.setScalar(0); }
+      if (!t.transparent && o.single) t.side = THREE.FrontSide;
+      if (t !== m) { if (Array.isArray(n.material)) arr[i] = t; else n.material = t; m.dispose(); }
+      t.needsUpdate = true;
+    });
+  });
+}
+function warmTex(root) {                                                                        // đẩy texture lên GPU trước khi hiện => không giật ở khung hình đầu tiên
+  root.traverse(n => { if (!n.isMesh) return; (Array.isArray(n.material) ? n.material : [n.material]).forEach(m => { ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap'].forEach(k => { if (m[k]) { try { renderer.initTexture(m[k]); } catch (e) { } } }); }); });
+}
 async function glbStart() {
-  await glbInit(); if (!GLTF) return;
-  const g = await loadGLB(BUS_GLB.url);                                                       // thay xe bus dựng bằng khối bằng mô hình thật
-  if (g && LIFE.bus) {
-    const m = g.scene, box = new THREE.Box3().setFromObject(m), sz = box.getSize(new THREE.Vector3()), k = BUS_GLB.len / Math.max(sz.x, sz.z, .01);
+  const [g, sg] = await (GLBP || (GLBP = glbPrefetch()));
+  if (g && LIFE.bus) {                                                                         // thay xe bus dựng bằng khối bằng mô hình thật
+    const m = g.scene; liteMats(m, { noEmissive: true });
+    const box = new THREE.Box3().setFromObject(m), sz = box.getSize(new THREE.Vector3()), k = BUS_GLB.len / Math.max(sz.x, sz.z, .01);
     m.scale.set(BUS_GLB.mirror ? -k : k, k, k); m.rotation.y = BUS_GLB.rotY; m.updateMatrixWorld(true);
     const b2 = new THREE.Box3().setFromObject(m), c = b2.getCenter(new THREE.Vector3()); m.position.set(-c.x, -b2.min.y + BUS_GLB.y, -c.z);
+    m.matrixAutoUpdate = true;
     const B0 = LIFE.bus, fs = BUS_GLB.mirror ? 1 : -1;                                        // fs = hướng đầu xe trong hệ cục bộ (xe dựng sẵn xoay y = π khi đặt vào cảnh)
     B0.body.children.forEach(o => { o.visible = false; }); B0.wh.forEach(w => { w.visible = false; }); B0.body.add(m); B0.pdir = fs;   // mô hình nằm trong body => vẫn chúi đầu khi phanh
     if (!BUS_GLB.mirror) { BUSC.from = -72; BUSC.to = 62; }                                    // đầu xe hướng +x => chạy từ trái sang phải
     BUSC.stop = BUS_GLB.doorX + fs * BUS_GLB.door;                                            // dừng sao cho cửa lên xe nằm giữa trạm
-    B0.g.position.x = BUSC.from; B0.px = BUSC.from; if (REDUCE) B0.g.position.x = BUSC.stop; B0.g.updateMatrixWorld(true);
-    playClips(g, m);
+    B0.bt = BUS_GLB.mirror ? Math.min(BUS_GLB.startT, 9) : BUS_GLB.startT;                    // vào trang là xe đã sắp tới (không phải đợi cả chu kỳ)
+    const ph = busPhase(B0.bt); B0.px = ph.x; B0.g.position.x = REDUCE ? BUSC.stop : ph.x; B0.g.updateMatrixWorld(true);
+    warmTex(m); playClips(g, m);
   }
-  const sg = await loadGLB(STOP_GLB.url);                                                     // thay trạm xe buýt dựng bằng khối bằng mô hình thật
-  if (sg) {
-    const m = sg.scene; m.scale.setScalar(STOP_GLB.scale); m.rotation.y = STOP_GLB.rotY; m.updateMatrixWorld(true);
+  if (sg) {                                                                                    // thay trạm xe buýt dựng bằng khối bằng mô hình thật
+    const m = sg.scene; liteMats(m, { single: true }); m.scale.setScalar(STOP_GLB.scale); m.rotation.y = STOP_GLB.rotY; m.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(m), c = b.getCenter(new THREE.Vector3());
-    m.position.set(STOP_GLB.x - c.x, -b.min.y, STOP_GLB.front - b.max.z);
-    m.traverse(o => { if (o.isMesh) { o.castShadow = !LOW; o.receiveShadow = true; } });
-    scene.add(m); m.updateMatrixWorld(true); playClips(sg, m);
+    m.position.set(STOP_GLB.x - c.x, -b.min.y, STOP_GLB.front - b.max.z); m.matrixAutoUpdate = true;
+    m.traverse(o => { if (o.isMesh) { o.castShadow = !LOW; o.receiveShadow = !LOW; } });
+    scene.add(m); m.updateMatrixWorld(true); warmTex(m); playClips(sg, m);
     if (LIFE.shelter) LIFE.shelter.visible = false;                                           // ẩn trạm dựng bằng khối cũ
     if (LIFE.sign) LIFE.sign.position.x = STOP_GLB.signX;                                     // dời biển trụ ra ngoài đầu trạm
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   }
-  applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
   for (const c of EXTRA_GLB) {
     const x = await loadGLB(c.url); if (!x) continue;
     const m = x.scene; m.position.set(c.pos[0], c.pos[1], c.pos[2]); m.rotation.y = c.rotY || 0; m.scale.setScalar(c.scale || 1); scene.add(m); m.updateMatrixWorld(true); playClips(x, m);
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   }
+  applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
 }
 
 /* ============================ VÒNG LẶP ============================ */
@@ -1796,6 +1819,7 @@ function updateEndBtn() {
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 async function boot() {
+  if (GLB_ON) GLBP = glbPrefetch();                                                                  // bắt đầu tải xe + trạm ngay, chạy song song với việc dựng cảnh
   world = $('world'); scroller = $('scroller'); stk = $('stk'); spc = $('spc'); canvas = document.createElement('canvas'); $('wcv').appendChild(canvas);
   renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
@@ -1851,8 +1875,9 @@ async function boot() {
   document.documentElement.addEventListener('mouseleave', () => { WIND.ptr.has = false; });
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  fxInit(); windInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
-  if (GLB_ON) glbStart();                                                                             // nạp .glb (nếu có) ở nền, không chặn màn hình tải
+  fxInit(); windInit(); resize();
+  if (GLB_ON) { try { await Promise.race([glbStart(), wait(7000)]); } catch (e) { console.warn('[9Sach] glbStart lỗi:', e); } }   // xe + trạm có mặt ngay từ khung hình đầu (mạng chậm quá 7 giây thì vào cảnh trước, mô hình tự thế vào sau)
+  renderer.compile(scene, camera); fxWarmDone();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
   await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
