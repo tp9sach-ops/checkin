@@ -1558,7 +1558,7 @@ const loadGLB = url => new Promise(res => { if (!GLTF) return res(null); GLTF.lo
 function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
 let GLBP = null;
 function glbPrefetch() {                                                                       // nạp xe + trạm song song, bắt đầu ngay từ đầu boot() để chồng thời gian với lúc dựng cảnh
-  return (async () => { await glbInit(); if (!GLTF) return [null, null]; ASSETP = crowdLoad(); return Promise.all([loadGLB(BUS_GLB.url), loadGLB(STOP_GLB.url)]); })();
+  return (async () => { await glbInit(); if (!GLTF) return [null, null]; ASSETP = crowdLoad(); RIDERP = ridersLoad(); return Promise.all([loadGLB(BUS_GLB.url), loadGLB(STOP_GLB.url)]); })();
 }
 function liteMats(root, o) {                                                                    // giảm tải GPU cho mô hình ngoài: Physical -> Standard, bỏ map thừa, mặt đơn nếu không trong suốt
   root.traverse(n => {
@@ -1675,6 +1675,38 @@ async function crowdStart() {
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
 }
 
+/* ==========================================================================
+   V14: XE MÁY + NGƯỜI LÁI BẰNG MÔ HÌNH 3D (.glb) — thay xe máy dựng bằng khối (xe + người lái liền một mô hình)
+   - File trong assets/models/ (Draco, màu lưu theo đỉnh, không texture, ~150 KB/xe, 30.000 tam giác/xe): rider_karlo / rider_knievel / rider_vespa / rider_sammy .glb
+   - Mô hình đã chuẩn hoá: đơn vị mét, đầu xe hướng +z, chân chạm y = 0, gốc ở giữa thân xe.
+   - Xe dựng bằng khối có đầu xe hướng +x nên mô hình được bọc trong 1 nhóm xoay y = π/2; hướng chạy, tốc độ, nhún/nghiêng vẫn do LIFE.scoot + lifeStep() lo như cũ.
+   - Thiếu file / tải lỗi => giữ xe dựng bằng khối cũ cho riêng xe đó. Chế độ LOW chỉ có 2 xe đầu (karlo, knievel).
+   Chỉnh nhanh: RIDERS.list[n] ứng với xe máy thứ n trong stageBus() { m = số thứ tự trong files, z = làn đường, v = tốc độ m/s, s = tỉ lệ kích thước (1 = chuẩn), r = độ nhám }.
+   Lưu ý khoảng cách làn: xe rộng ~0.6–1.0 m (knievel có gương), hai xe cùng chiều chạy khác tốc độ sẽ vượt nhau => cách nhau ≥ 0.9 m.
+   ========================================================================== */
+const RIDERS = {
+  dir: 'assets/models/',
+  files: ['rider_karlo.glb', 'rider_knievel.glb', 'rider_vespa.glb', 'rider_sammy.glb'],
+  list: [{ m: 0, z: 19.8 }, { m: 1, z: 24.0 }, { m: 2, z: 18.9 }, { m: 3, z: 25.0, v: 4.6 }]       // theo thứ tự 4 xe máy: [-x, +x, -x, +x]; sammy chống 1 chân xuống đất nên chạy chậm hơn
+};
+let RIDERP = null;
+function ridersLoad() { return Promise.all(RIDERS.files.map(f => loadGLB(RIDERS.dir + f))); }
+async function ridersStart() {
+  const A = await (RIDERP || (RIDERP = ridersLoad())); let done = 0;
+  LIFE.scoot.forEach((s, n) => {
+    const d = RIDERS.list[n]; const gl = d && A[d.m]; if (!gl || gl.scene.userData.used) return; gl.scene.userData.used = true;
+    const root = gl.scene;
+    root.traverse(o => { if (!o.isMesh) return; o.castShadow = false; o.receiveShadow = false;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.roughness = d.r != null ? d.r : .8; m.metalness = 0; m.side = THREE.DoubleSide; }); });
+    const piv = new THREE.Group(); piv.rotation.y = Math.PI / 2; piv.scale.setScalar(d.s || 1); piv.add(root);                // +z (đầu xe trong file) -> +x (đầu xe của cảnh)
+    s.g.children.slice().forEach(c => { s.g.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); });         // bỏ xe + người dựng bằng khối
+    s.g.add(piv);
+    if (d.z != null) { s.z = d.z; s.g.position.z = d.z; } if (d.v) s.v = d.v;
+    s.g.updateMatrixWorld(true); done++;
+  });
+  if (done) console.info('[9Sach] V14: đã thay', done, 'xe máy + người lái bằng mô hình 3D');
+}
+
 async function glbStart() {
   const [g, sg] = await (GLBP || (GLBP = glbPrefetch()));
   if (g && LIFE.bus) {                                                                         // thay xe bus dựng bằng khối bằng mô hình thật
@@ -1707,6 +1739,7 @@ async function glbStart() {
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   }
   try { await crowdStart(); } catch (e) { console.error('[9Sach] người/cây 3D lỗi, giữ bản dựng bằng khối:', e); }   // V13
+  try { await ridersStart(); } catch (e) { console.error('[9Sach] xe máy + người lái 3D lỗi, giữ bản dựng bằng khối:', e); }   // V14
   applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
 }
 
