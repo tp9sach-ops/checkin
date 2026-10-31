@@ -278,7 +278,7 @@ function stageSky() {
   scene.background = sky.t;
   const env = makeEnv(); [M.honey, M.honey2, M.gold, M.silver, M.steel, M.glassD].forEach(m => { m.envMap = env; m.envMapIntensity = (m === M.honey || m === M.honey2) ? .3 : .6; m.needsUpdate = true; }); M.glass.envMap = env; M.glass.envMapIntensity = .35;
   scene.fog = new THREE.FogExp2(0xf0b878, .0085);                       // sương mù nhẹ
-  scene.add(new THREE.HemisphereLight(0xfff0dc, 0x7a6248, 1.0));
+  HEMI = new THREE.HemisphereLight(0xfff0dc, 0x7a6248, 1.0); scene.add(HEMI);
   const sun = new THREE.DirectionalLight(0xffc98a, 1.9); sun.position.set(-22, 20, 42); sun.target.position.set(0, 0, -6);
   scene.add(sun, sun.target);
   if (!LOW) {                                                           // bóng đổ mềm chỉ ở máy mạnh
@@ -1165,7 +1165,7 @@ function bake(g, shadow) {
     });
     if (!rm.length) return g;
     const out = new THREE.Group(), made = [];
-    bk.forEach((arr, mat) => { const m = BGU.mergeGeometries(arr, false); if (!m) throw new Error('mergeGeometries null'); const me = new THREE.Mesh(m, mat); me.castShadow = !!shadow && !LOW; me.receiveShadow = !!shadow && !LOW; made.push(me); });
+    bk.forEach((arr, mat) => { const m = BGU.mergeGeometries(arr, false); if (!m) throw new Error('mergeGeometries null'); const me = new THREE.Mesh(m, mat); me.castShadow = !!shadow && !LOW; made.push(me); });
     rm.forEach(o => { if (o.parent) o.parent.remove(o); });
     made.forEach(m => out.add(m)); g.add(out);
   } catch (e) { console.warn('[9Sach] bake lỗi, giữ nguyên mesh rời:', e); }
@@ -1307,7 +1307,7 @@ function busPhase(t) {
 function stageStreetPlus() {
   const K = k12();
   /* --- trạm xe buýt: mái xanh viền vàng, kính, hộp đèn quảng cáo, ghế, thùng rác --- */
-  const SH = new THREE.Group(); SH.position.set(-8.6, 0, 12.45); scene.add(SH);
+  const SH = new THREE.Group(); SH.position.set(-8.6, 0, 12.45); scene.add(SH); LIFE.shelter = SH;
   [-1.25, 1.25].forEach(x => [-.5, .5].forEach(z => C(SH, K.hub, [.08, 2.55, .08], [x, 1.28, z])));
   B(SH, K.busG, [2.9, .3, 1.3], [0, 2.7, 0]); B(SH, K.busH, [3.0, .05, 1.4], [0, 2.88, 0]);
   P(SH, textMat('TRẠM XE BUÝT · TUYẾN 09', 11, '#ffffff'), [2.3, .2], [0, 2.7, .66]);
@@ -1316,7 +1316,7 @@ function stageStreetPlus() {
   B(SH, M.wood, [2.0, .07, .4], [.1, .5, -.32]); [-.8, 1.0].forEach(x => B(SH, K.hubD, [.05, .5, .34], [x, .25, -.32])); B(SH, M.wood, [2.0, .32, .04], [.1, .84, -.5]);
   C(SH, K.hubD, [.36, .62, .36], [1.75, .31, .1]); C(SH, K.busG, [.38, .06, .38], [1.75, .64, .1]);
   bake(SH, true);
-  { const g = new THREE.Group(); g.position.set(-10.3, 0, 12.95); scene.add(g);                                   // biển trụ "XE BUÝT"
+  { const g = new THREE.Group(); g.position.set(-10.3, 0, 12.95); scene.add(g); LIFE.sign = g;                                   // biển trụ "XE BUÝT"
     C(g, K.hub, [.07, 3.1, .07], [0, 1.55, 0]);
     const t = canvasTex(256, 256, (c, w, h) => { c.fillStyle = '#0b5fb3'; c.beginPath(); c.roundRect(6, 6, w - 12, h - 12, 28); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 6; c.stroke();
       c.fillStyle = '#fff'; c.beginPath(); c.roundRect(58, 40, 140, 96, 14); c.fill(); c.fillStyle = '#0b5fb3'; c.fillRect(70, 52, 52, 38); c.fillRect(134, 52, 52, 38); c.beginPath(); c.arc(86, 142, 12, 0, 7); c.arc(170, 142, 12, 0, 7); c.fill();
@@ -1363,7 +1363,7 @@ function stageBus() {
     LIFE.scoot.push({ g, dir: d[4], z: d[5], v: d[6], x0: d[7], ph: Math.random() * 6 });
   });
   // người đi bộ trên vỉa hè (đi qua đi lại, quay đầu ở hai đầu)
-  [[0xf2c230, 0x222831, 0x1a1410, 10.1, 1, .9, -9], [0x3b7ddd, 0x39414d, 0x4a2c17, 10.55, -1, 1.15, 8], [0xe66a8a, 0x2f3d55, 0x1a1410, 10.95, 1, .75, -2]].forEach(a => {
+  [[0xf2c230, 0x222831, 0x1a1410, 9.55, 1, .9, -9], [0x3b7ddd, 0x39414d, 0x4a2c17, 10.0, -1, 1.15, 8], [0xe66a8a, 0x2f3d55, 0x1a1410, 10.4, 1, .75, -2]].forEach(a => {
     const p = person(a[0], a[1], a[2], 1 + Math.random() * .06); p.g.position.set(a[6], 0, a[3]); p.g.rotation.y = a[4] > 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(p.g);
     LIFE.walk.push({ p, z: a[3], dir: a[4], v: a[5], x: a[6], ph: Math.random() * 6, pause: 0, ry: p.g.rotation.y });
   });
@@ -1469,13 +1469,14 @@ const wrapX = x => ((x + 75) % 150 + 150) % 150 - 75;
 function lifeStep(now, dt) {
   if (!V12_ON || REDUCE || !LIFE.bus || sp > .34) return;
   LIFE.t += dt; const t = LIFE.t;
+  MIXERS.forEach(mx => mx.update(dt));
   // xe bus
   { const Bs = LIFE.bus, K = k12(), ph = busPhase(t), g = Bs.g, dx = Bs.px - ph.x; Bs.px = ph.x;
-    const vis = ph.st !== 3 && ph.x < 52; if (g.visible !== vis) g.visible = vis;
+    const vis = ph.st !== 3 && Math.abs(ph.x) < 52; if (g.visible !== vis) g.visible = vis;
     if (vis) {
       if (Math.abs(dx) < 3) Bs.wh.forEach(w => { w.rotation.z -= dx / .52; });
       const want = ph.st === 1 ? -.014 : ph.st === 2 ? 0 : ph.u > BUSC.ta + BUSC.td ? .006 : 0; Bs.pitch += (want - Bs.pitch) * Math.min(1, dt * 4);
-      Bs.body.rotation.z = Bs.pitch; Bs.body.position.y = ph.st === 2 ? Math.sin(t * 38) * .004 : 0;
+      Bs.body.rotation.z = Bs.pitch * (Bs.pdir || 1); Bs.body.position.y = ph.st === 2 ? Math.sin(t * 38) * .004 : 0;
       g.position.x = ph.x; g.updateMatrixWorld(true);
     }
     const br = ph.st === 1 || ph.st === 2 ? 3.4 : .8, hz = ph.st === 2 && Math.floor(t * 2.6) % 2 ? 3 : .12;
@@ -1502,6 +1503,85 @@ function lifeStep(now, dt) {
     for (let i = 0; i < a.length; i += 3) { const u = (b[i] + 1.1) / 2.2; a[i + 2] = Math.sin(u * 5.5 - t * 4.2 + f.ph) * .22 * u; a[i + 1] = b[i + 1] + Math.sin(u * 3 - t * 3 + f.ph) * .05 * u; }
     f.geo.attributes.position.needsUpdate = true; f.geo.computeVertexNormals();
   });
+}
+
+
+/* ==========================================================================
+   V12.1: LỐI DỰNG HÌNH CỦA INDEX 7 (three.js "animation - keyframes")
+   1) Ánh sáng môi trường: Sky shader + PMREMGenerator => scene.environment (mọi vật liệu PBR được chiếu sáng/phản chiếu như ảnh trời thật).
+      Chỉnh: IBL_ON (bật/tắt), IBL_K (độ mạnh phản chiếu, 0..1), IBL_HEMI (độ sáng đèn bán cầu giữ lại để cảnh không bị cháy sáng).
+   2) Nạp mô hình .glb bằng GLTFLoader + DRACOLoader + AnimationMixer, đúng như index 7.
+      - BUS_GLB: nếu có file assets/models/bus.glb thì xe bus dựng bằng khối sẽ được thay bằng mô hình thật (len = chiều dài xe theo mét,
+        rotY = xoay để đầu xe hướng +x, y = nâng/hạ). Không có file thì giữ xe dựng bằng code.
+      - EXTRA_GLB: danh sách mô hình đặt thêm vào cảnh: { url, pos:[x,y,z], rotY, scale }. Ví dụ mô hình Littlest Tokyo của index 7:
+        { url: 'https://threejs.org/examples/models/gltf/LittlestTokyo.glb', pos: [30, 0, 8], rotY: 0, scale: .05 }
+   ========================================================================== */
+const IBL_ON = true, IBL_K = .5, IBL_HEMI = .55, GLB_ON = true;
+/* XE BUÝT: Toei Bus (Tokyo). Trong file .glb: đầu xe hướng -x, cửa lên xe (ENTRANCE) ở phía +z, gần đầu xe.
+   mirror:false = giữ nguyên mô hình (chữ trên thân xe đọc đúng), xe chạy từ trái sang phải (+x), cửa hướng về vỉa hè.
+   mirror:true  = lật gương mô hình để xe chạy về -x như xe dựng bằng khối cũ (nhưng chữ trên thân xe bị ngược).
+   door  = khoảng cách (m) từ tâm xe đến giữa cửa lên xe;  doorX = vị trí x trên đường mà cửa xe dừng đúng (giữa trạm). */
+const BUS_GLB = { url: 'assets/models/japanese_bus_toei_bus_tokyo.glb', len: 10.4, rotY: 0, y: 0, mirror: false, door: 4.1, doorX: -8.8 };
+/* TRẠM XE BUÝT: standard_bus_stop.glb (dài 4.84m, sâu 2.5m). x = tâm trạm; front = z của mép ngoài cùng (cột chắn) — vỉa hè kết thúc ở z=13.1;
+   scale = tỉ lệ (0.85 để vừa vỉa hè); signX = vị trí mới của biển trụ "XE BUÝT" (tránh đè lên trạm). */
+const STOP_GLB = { url: 'assets/models/standard_bus_stop.glb', x: -8.6, front: 13.0, scale: .85, rotY: 0, signX: -11.4 };
+const EXTRA_GLB = [];
+let HEMI = null, GLTF = null; const MIXERS = [];
+async function iblSky() {
+  if (!IBL_ON) return;
+  try {
+    const { Sky } = await import('three/addons/objects/Sky.js');
+    const sky = new Sky(); sky.scale.setScalar(10000); const u = sky.material.uniforms;
+    u['turbidity'].value = 0; u['rayleigh'].value = 3; u['mieDirectionalG'].value = .7; u['sunPosition'].value.set(-.5, .22, .8);   // thông số như index 7, mặt trời cùng hướng đèn nắng của cảnh
+    const es = new THREE.Scene(); es.add(sky); const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromScene(es).texture; pm.dispose(); sky.geometry.dispose(); sky.material.dispose();
+    if (HEMI) HEMI.intensity = IBL_HEMI;
+  } catch (e) { console.warn('[9Sach] không dựng được ánh sáng môi trường (IBL):', e); scene.environment = null; }
+}
+function applyIBL() {                                                                       // vật liệu chưa có envMap riêng thì dùng environment chung với độ mạnh IBL_K
+  if (!scene.environment) return;
+  scene.traverse(o => { const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []); ms.forEach(m => { if (m.isMeshStandardMaterial && !m.envMap) m.envMapIntensity = IBL_K; }); });
+}
+async function glbInit() {
+  try {
+    const [a, b] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/DRACOLoader.js')]);
+    const dr = new b.DRACOLoader(); dr.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    GLTF = new a.GLTFLoader(); GLTF.setDRACOLoader(dr);
+  } catch (e) { GLTF = null; console.warn('[9Sach] không nạp được GLTFLoader:', e); }
+}
+const loadGLB = url => new Promise(res => { if (!GLTF) return res(null); GLTF.load(url, g => res(g), undefined, () => res(null)); });
+function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
+async function glbStart() {
+  await glbInit(); if (!GLTF) return;
+  const g = await loadGLB(BUS_GLB.url);                                                       // thay xe bus dựng bằng khối bằng mô hình thật
+  if (g && LIFE.bus) {
+    const m = g.scene, box = new THREE.Box3().setFromObject(m), sz = box.getSize(new THREE.Vector3()), k = BUS_GLB.len / Math.max(sz.x, sz.z, .01);
+    m.scale.set(BUS_GLB.mirror ? -k : k, k, k); m.rotation.y = BUS_GLB.rotY; m.updateMatrixWorld(true);
+    const b2 = new THREE.Box3().setFromObject(m), c = b2.getCenter(new THREE.Vector3()); m.position.set(-c.x, -b2.min.y + BUS_GLB.y, -c.z);
+    const B0 = LIFE.bus, fs = BUS_GLB.mirror ? 1 : -1;                                        // fs = hướng đầu xe trong hệ cục bộ (xe dựng sẵn xoay y = π khi đặt vào cảnh)
+    B0.body.children.forEach(o => { o.visible = false; }); B0.wh.forEach(w => { w.visible = false; }); B0.body.add(m); B0.pdir = fs;   // mô hình nằm trong body => vẫn chúi đầu khi phanh
+    if (!BUS_GLB.mirror) { BUSC.from = -72; BUSC.to = 62; }                                    // đầu xe hướng +x => chạy từ trái sang phải
+    BUSC.stop = BUS_GLB.doorX + fs * BUS_GLB.door;                                            // dừng sao cho cửa lên xe nằm giữa trạm
+    B0.g.position.x = BUSC.from; B0.px = BUSC.from; if (REDUCE) B0.g.position.x = BUSC.stop; B0.g.updateMatrixWorld(true);
+    playClips(g, m);
+  }
+  const sg = await loadGLB(STOP_GLB.url);                                                     // thay trạm xe buýt dựng bằng khối bằng mô hình thật
+  if (sg) {
+    const m = sg.scene; m.scale.setScalar(STOP_GLB.scale); m.rotation.y = STOP_GLB.rotY; m.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(m), c = b.getCenter(new THREE.Vector3());
+    m.position.set(STOP_GLB.x - c.x, -b.min.y, STOP_GLB.front - b.max.z);
+    m.traverse(o => { if (o.isMesh) { o.castShadow = !LOW; o.receiveShadow = true; } });
+    scene.add(m); m.updateMatrixWorld(true); playClips(sg, m);
+    if (LIFE.shelter) LIFE.shelter.visible = false;                                           // ẩn trạm dựng bằng khối cũ
+    if (LIFE.sign) LIFE.sign.position.x = STOP_GLB.signX;                                     // dời biển trụ ra ngoài đầu trạm
+    if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
+  }
+  applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
+  for (const c of EXTRA_GLB) {
+    const x = await loadGLB(c.url); if (!x) continue;
+    const m = x.scene; m.position.set(c.pos[0], c.pos[1], c.pos[2]); m.rotation.y = c.rotY || 0; m.scale.setScalar(c.scale || 1); scene.add(m); m.updateMatrixWorld(true); playClips(x, m);
+    if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
+  }
 }
 
 /* ============================ VÒNG LẶP ============================ */
@@ -1745,12 +1825,13 @@ async function boot() {
     } catch (e) { composer = null; useComposer = false; }
   }
   await fin('post');
-  stageSky(); await fin('sky'); stagePlaza(); await fin('plaza'); stageFacade(logo); stageTiger(); await fin('facade'); stageInterior(); await fin('interior'); stageObjects(); await fin('objects');
+  stageSky(); await iblSky(); await fin('sky'); stagePlaza(); await fin('plaza'); stageFacade(logo); stageTiger(); await fin('facade'); stageInterior(); await fin('interior'); stageObjects(); await fin('objects');
   await loadProductImages(); stageDecor(); await fin('decor');
   if (V12_ON) {                                                                                      // V12: phố sống động + chi tiết gian hàng (mỗi phần bọc try/catch)
     try { BGU = await import('three/addons/utils/BufferGeometryUtils.js'); } catch (e) { BGU = null; console.warn('[9Sach] không nạp được BufferGeometryUtils, bỏ gộp mesh'); }
     safe('street', stageStreetPlus); safe('shop', stageShopPlus); safe('inside', stageInsidePlus); safe('bus', stageBus);
   }
+  applyIBL();
   buildDots();
   scene.updateMatrixWorld(true); scene.matrixWorldAutoUpdate = false;       // cảnh tĩnh: khỏi tính lại ma trận hàng nghìn vật thể mỗi khung; chỉ cửa được cập nhật tay trong tick()
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
@@ -1771,13 +1852,14 @@ async function boot() {
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   fxInit(); windInit(); resize(); renderer.compile(scene, camera); fxWarmDone();
+  if (GLB_ON) glbStart();                                                                             // nạp .glb (nếu có) ở nền, không chặn màn hình tải
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
   await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
   await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 5000; setTimeout(openGate, 350);
 }
 
-API.version = 'v12';
+API.version = 'v12.1';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
