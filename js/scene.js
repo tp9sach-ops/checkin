@@ -1554,14 +1554,24 @@ function applyIBL() {                                                           
 }
 async function glbInit() {
   try {
-    const probe = fetch('assets/draco/draco_decoder.wasm', { method: 'HEAD' }).then(r => r.ok).catch(() => false);                        // V16: bộ giải Draco nằm ngay trên host (khỏi chờ gstatic); thiếu file thì dùng gstatic
+    const probe = Promise.all(['draco_decoder.wasm', 'draco_wasm_wrapper.js'].map(f => fetch('assets/draco/' + f, { method: 'HEAD' }).then(r => r.ok))).then(a => a.every(Boolean)).catch(() => false);                        // V16: bộ giải Draco nằm ngay trên host (khỏi chờ gstatic); thiếu file thì dùng gstatic
     const [a, b] = await tmo(Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/DRACOLoader.js')]), 8000);
     const local = await tmo(probe, 2500).catch(() => false);
-    const dr = new b.DRACOLoader(); dr.setDecoderPath(local ? 'assets/draco/' : 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/'); try { dr.preload(); } catch (e) { }   // tải sẵn bộ giải Draco
-    GLTF = new a.GLTFLoader(); GLTF.setDRACOLoader(dr);
+    const GS = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
+    DRC.mk = p => { const d = new b.DRACOLoader(); d.setDecoderPath(p); try { d.preload(); } catch (e) { } return d; }; DRC.local = !!local;   // tải sẵn bộ giải Draco
+    GLTF = new a.GLTFLoader(); GLTF.setDRACOLoader(DRC.mk(local ? 'assets/draco/' : GS));
   } catch (e) { GLTF = null; console.warn('[9Sach] không nạp được GLTFLoader:', e); }
 }
-const loadGLB = url => new Promise(res => { if (!GLTF) return res(null); GLTF.load(url, g => res(g), undefined, () => res(null)); });
+const DRC = { mk: null, local: false, fell: false };
+const loadGLB = url => new Promise(res => {
+  if (!GLTF) return res(null);
+  GLTF.load(url, g => res(g), undefined, () => {
+    if (DRC.local && !DRC.fell && DRC.mk) {                                                    // V16.1: bộ giải Draco local lỗi (thiếu/hỏng file trên host) => chuyển sang gstatic rồi thử lại 1 lần
+      DRC.fell = true; DRC.local = false; console.warn('[9Sach] Draco local lỗi, chuyển sang gstatic'); GLTF.setDRACOLoader(DRC.mk('https://www.gstatic.com/draco/versioned/decoders/1.5.6/'));
+    }
+    if (DRC.fell && !url.__r) { const u2 = new String(url); u2.__r = 1; GLTF.load(url, g => res(g), undefined, () => res(null)); } else res(null);
+  });
+});
 function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
 let GLBP = null;
 function glbPrefetch() {                                                                       // nạp xe + trạm song song, bắt đầu ngay từ đầu boot() để chồng thời gian với lúc dựng cảnh
