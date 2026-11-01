@@ -224,7 +224,7 @@ function bldTex(base, accent, h, seed) {                                        
 function building(x, w, h, z, d, base, accent, seed) {
   const side = std(base, { roughness: .9 }), tex = std(0xffffff, { map: bldTex('#' + new THREE.Color(base).getHexString(), '#' + new THREE.Color(accent).getHexString(), h, seed), roughness: .9 });
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, tex, side]); m.position.set(x, h / 2, z); m.castShadow = !LOW; scene.add(m);
-  OLDB.push(m, B(scene, std(0xaeaaa2, { roughness: .9 }), [w + .4, .35, d + .4], [x, h + .17, z]));               // mái đua (V15: ghi lại để thay bằng nhà .glb)
+  OLDB.push(m, B(scene, std(0xaeaaa2, { roughness: .9 }), [w + .4, .35, d + .4], [x, h + .17, z])); OLDB.forEach(o => { o.visible = !GLB_ON; });               // mái đua (V15: ghi lại để thay bằng nhà .glb)
   return m;
 }
 let WIN_D = null, WIN_L = null;
@@ -1716,9 +1716,10 @@ async function ridersStart() {
    ========================================================================== */
 const STREET = {
   dir: 'assets/models/', tex: 'assets/textures/', S: 3.6, zFront: 4.5,
-  files: ['street_buildings.glb', 'prop_bench.glb', 'prop_bike.glb', 'prop_lamp.glb'],
-  bld: [['bldC', 19.5, 1], ['bldB', 29.5, 1], ['bldA', 41, 1.05], ['bldD', 55, 1], ['bldC', 68, 1.1], ['bldD', -19, 1], ['bldA', -32, 1], ['bldB', -43, 1], ['bldC', -54, 1.05], ['bldA', -66, 1.1]],
-  benches: [[15.5, 8.6], [-15.5, 8.6], [27, 8.6], [-27, 8.6]],
+  files: ['street_buildings.glb', 'prop_bench.glb', 'prop_bike.glb', 'prop_lamp.glb', 'street_store.glb'],
+  store: { x: 35, y: 2.23, z: -.5 },                                                       // cửa hàng Điện máy Xanh bên phải (file gốc: sàn y=-2.2, mặt tiền z=5, rộng x -20..19; đặt sao cho mặt tiền z≈4.5, mép trái sát nhà 9 Sạch)
+  bld: [['bldD', 66, 1], ['bldC', 78, 1.1], ['bldD', -19, 1], ['bldA', -32, 1], ['bldB', -43, 1], ['bldC', -54, 1.05], ['bldA', -66, 1.1]],
+  benches: [[15.5, 10.2], [-15.5, 8.6], [27, 10.2], [-27, 8.6]],
   bikes: [[17.3, 9.5, 1.2], [-17.3, 9.3, -1.3], [-29.2, 9.2, 1.0]],
   lamps: [21.5, -21.5, 31, -31],
   trees: [[-19, 0], [19, 1], [-35, 1], [35, 0], [-46, 0], [46, 1]]
@@ -1727,9 +1728,9 @@ let STREETP = null;
 function streetLoad() { return Promise.all(STREET.files.map(f => loadGLB(STREET.dir + f))); }
 function streetTex() {                                                                         // mặt đường + vỉa hè bằng ảnh thật (nạp xong mới thay, lỗi thì giữ ảnh vẽ bằng code)
   const L = new THREE.TextureLoader();
-  const ld = (f, cb) => L.load(STREET.tex + f, t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = LOW ? 1 : 4; cb(t); if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true; }, undefined, () => { });
-  ld('road.webp', t => { if (!GROUND) return; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.repeat.set(75, 150); GROUND.material.map = t; GROUND.material.needsUpdate = true; });   // 1 ô = 4 x 2 m
-  ld('paver.webp', t => { if (!WALK) return; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(62.5, 5.5); WALK.material.map = t; WALK.material.needsUpdate = true; });          // 1 ô = 2.4 m
+  const ld = (f, cb) => new Promise(res => L.load(STREET.tex + f, t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = LOW ? 1 : 4; cb(t); try { renderer.initTexture(t); } catch (e) { } res(); }, undefined, () => res()));
+  return Promise.all([ld('road.webp', t => { if (!GROUND) return; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.repeat.set(75, 150); GROUND.material.map = t; GROUND.material.needsUpdate = true; }),   // 1 ô = 4 x 2 m
+  ld('paver.webp', t => { if (!WALK) return; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(62.5, 5.5); WALK.material.map = t; WALK.material.needsUpdate = true; })]);          // 1 ô = 2.4 m
 }
 function placeProp(gl, x, z, ry, s) {
   const o = gl.scene.clone(true); o.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
@@ -1742,19 +1743,25 @@ function addStreetTree(x, kind) {                                               
   TREES.push({ g, k: 1, ry: 0, blobs: [], exc: 0, proc: { visible: false }, sw: t.U }); g.updateMatrixWorld(true);
 }
 async function streetStart() {
-  streetTex();
-  const A = await (STREETP || (STREETP = streetLoad())); const [bl, bench, bike, lamp] = A; let n = 0;
+  const texP = streetTex();
+  const A = await (STREETP || (STREETP = streetLoad())); await texP; const [bl, bench, bike, lamp, store] = A; let n = 0;
+  if (store) {                                                                                 // cửa hàng Điện máy Xanh (logo đã vẽ sẵn vào texture biển)
+    store.scene.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
+    const sg = new THREE.Group(); sg.add(store.scene); sg.position.set(STREET.store.x, STREET.store.y, STREET.store.z); scene.add(sg); sg.updateMatrixWorld(true); warmTex(sg); n++;
+  }
   if (bl) {
     bl.scene.updateMatrixWorld(true); const bx = {};
     ['bldA', 'bldB', 'bldC', 'bldD'].forEach(k => { const o = bl.scene.getObjectByName(k); if (o) { o.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; (Array.isArray(m.material) ? m.material : [m.material]).forEach(q => { q.roughness = .9; q.metalness = 0; }); } }); bx[k] = [o, new THREE.Box3().setFromObject(o)]; } });
     if (Object.keys(bx).length) {
-      OLDB.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); }); OLDB.length = 0;                      // bỏ 6 khối nhà cũ
-      (LOW ? STREET.bld.filter((_, i) => i % 5 < 3) : STREET.bld).forEach(d => {
+      OLDB.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); }); OLDB.length = 0;                      // bỏ 6 khối nhà cũ (đã ẩn từ đầu nên người dùng không thấy cảnh cũ)
+      (LOW ? STREET.bld.filter((_, i) => i % 3 !== 2) : STREET.bld).forEach(d => {
         const e = bx[d[0]]; if (!e) return; const c = e[0].clone(true), b = e[1], g = new THREE.Group();
         c.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -b.max.z); g.add(c); g.scale.setScalar(STREET.S * (d[2] || 1)); g.position.set(d[1], 0, STREET.zFront); scene.add(g); g.updateMatrixWorld(true); n++;
       });
+      warmTex(bl.scene);
     }
   }
+  if (!n) OLDB.forEach(o => { o.visible = true; });                                          // không nạp được nhà mới => hiện lại nhà cũ
   if (bench) STREET.benches.forEach(p => placeProp(bench, p[0], p[1], 0));
   if (bike) STREET.bikes.forEach(p => placeProp(bike, p[0], p[1], p[2]));
   if (lamp) STREET.lamps.forEach(x => placeProp(lamp, x, 12.2, 0));
@@ -1794,9 +1801,11 @@ async function glbStart() {
     const m = x.scene; m.position.set(c.pos[0], c.pos[1], c.pos[2]); m.rotation.y = c.rotY || 0; m.scale.setScalar(c.scale || 1); scene.add(m); m.updateMatrixWorld(true); playClips(x, m);
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   }
-  try { await crowdStart(); } catch (e) { console.error('[9Sach] người/cây 3D lỗi, giữ bản dựng bằng khối:', e); }   // V13
-  try { await ridersStart(); } catch (e) { console.error('[9Sach] xe máy + người lái 3D lỗi, giữ bản dựng bằng khối:', e); }   // V14
-  try { await streetStart(); } catch (e) { console.error('[9Sach] cảnh quan phố 3D lỗi, giữ bản cũ:', e); }   // V15
+  await Promise.all([                                                                          // V13 + V14 + V15 chạy song song (file đã tải song song từ glbPrefetch)
+    crowdStart().catch(e => console.error('[9Sach] người/cây 3D lỗi, giữ bản dựng bằng khối:', e))                       // V13
+      .then(() => streetStart()).catch(e => { console.error('[9Sach] cảnh quan phố 3D lỗi, giữ bản cũ:', e); OLDB.forEach(o => { o.visible = true; }); }),   // V15 (cần cây V13 nạp xong để thêm cây)
+    ridersStart().catch(e => console.error('[9Sach] xe máy + người lái 3D lỗi, giữ bản dựng bằng khối:', e))           // V14
+  ]);
   applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
 }
 
@@ -2069,7 +2078,7 @@ async function boot() {
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   fxInit(); windInit(); resize();
-  if (GLB_ON) { try { await Promise.race([glbStart(), wait(7000)]); } catch (e) { console.warn('[9Sach] glbStart lỗi:', e); } }   // xe + trạm có mặt ngay từ khung hình đầu (mạng chậm quá 7 giây thì vào cảnh trước, mô hình tự thế vào sau)
+  if (GLB_ON) { try { await Promise.race([glbStart(), wait(12000)]); } catch (e) { console.warn('[9Sach] glbStart lỗi:', e); } }   // xe + trạm có mặt ngay từ khung hình đầu (mạng chậm quá 7 giây thì vào cảnh trước, mô hình tự thế vào sau)
   renderer.compile(scene, camera); fxWarmDone();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
