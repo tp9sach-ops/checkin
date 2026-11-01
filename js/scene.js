@@ -221,10 +221,11 @@ function bldTex(base, accent, h, seed) {                                        
   });
   return o.t;
 }
+const inStoreZone = o => o.position.x >= 12 && o.position.x <= 48;
 function building(x, w, h, z, d, base, accent, seed) {
   const side = std(base, { roughness: .9 }), tex = std(0xffffff, { map: bldTex('#' + new THREE.Color(base).getHexString(), '#' + new THREE.Color(accent).getHexString(), h, seed), roughness: .9 });
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, tex, side]); m.position.set(x, h / 2, z); m.castShadow = !LOW; scene.add(m);
-  OLDB.push(m, B(scene, std(0xaeaaa2, { roughness: .9 }), [w + .4, .35, d + .4], [x, h + .17, z])); OLDB.forEach(o => { o.visible = !GLB_ON; });               // mái đua (V15: ghi lại để thay bằng nhà .glb)
+  OLDB.push(m, B(scene, std(0xaeaaa2, { roughness: .9 }), [w + .4, .35, d + .4], [x, h + .17, z])); OLDB.forEach(o => { o.visible = !GLB_ON || inStoreZone(o); });               // V16.5: nhà cũ ở vùng cửa hàng ĐMX (x 12..48) luôn hiện cho tới khi cửa hàng .glb về; mái đua (V15: ghi lại để thay bằng nhà .glb)
   return m;
 }
 let WIN_D = null, WIN_L = null;
@@ -1564,6 +1565,7 @@ async function glbInit() {
     GLTF = new a.GLTFLoader(); GLTF.setDRACOLoader(DRC.mk(local ? 'assets/draco/' : GS));
   } catch (e) { GLTF = null; console.warn('[9Sach] không nạp được GLTFLoader:', e); }
 }
+let WEAK = false, LOADING = true;                                                                // V16.4: WEAK = card đồ họa tích hợp/yếu (bỏ bloom + bóng mềm từ đầu); LOADING = còn đang nạp mô hình (vẽ 30 khung/giây để dành sức cho việc giải nén)
 const DRC = { mk: null, local: false, fell: false };
 function rawGLB(url, res) {
   GLTF.load(url, g => res(g), undefined, () => {
@@ -1578,7 +1580,10 @@ const GQ = { q: [], run: 0, max: 3, seq: 0 };
 function pumpGLB() {
   while (GQ.run < GQ.max && GQ.q.length) {
     const j = GQ.q.shift(); GQ.run++;
-    rawGLB(j.url, g => { GQ.run--; tlog('tải xong ' + j.url.split('/').pop()); j.res(g); pumpGLB(); });
+    rawGLB(j.url, g => {
+      GQ.run--; let st = ''; try { const e = performance.getEntriesByName(new URL(j.url, location.href).href).pop(); if (e) st = ' — ' + Math.round((e.encodedBodySize || e.transferSize || 0) / 1024) + ' KB, tải ' + Math.round(e.duration) + 'ms'; } catch (x) { }
+      tlog('tải xong ' + j.url.split('/').pop() + st); j.res(g); pumpGLB();
+    });
   }
 }
 const loadGLB = (url, pri) => new Promise(res => {
@@ -1587,9 +1592,9 @@ const loadGLB = (url, pri) => new Promise(res => {
 });
 function playClips(g, root) { if (g.animations && g.animations.length) { const mx = new THREE.AnimationMixer(root); g.animations.forEach(c => mx.clipAction(c).play()); MIXERS.push(mx); } }
 let GLBP = null;
-let BUSP = null, STOPP = null;
+let BUSP = null, STOPP = null, STOREP = null;
 function glbPrefetch() {                                                                       // V16.3: chỉ khởi tạo bộ đọc rồi xếp hàng toàn bộ file (loadGLB tự sắp theo ưu tiên)
-  return GLBP = glbInit().then(() => { STREETP = streetLoad(); BUSP = loadGLB(BUS_GLB.url, 1); STOPP = loadGLB(STOP_GLB.url, 1); ASSETP = crowdLoad(); RIDERP = ridersLoad(); });
+  return GLBP = glbInit().then(() => { STREETP = streetLoad(); BUSP = loadGLB(BUS_GLB.url, 1); STOPP = loadGLB(STOP_GLB.url, 1); STOREP = loadGLB(STREET.dir + STREET.storeFile, 5); ASSETP = crowdLoad(); RIDERP = ridersLoad(); });
 }
 function liteMats(root, o) {                                                                    // giảm tải GPU cho mô hình ngoài: Physical -> Standard, bỏ map thừa, mặt đơn nếu không trong suốt
   root.traverse(n => {
@@ -1747,7 +1752,7 @@ async function ridersStart() {
    ========================================================================== */
 const STREET = {
   dir: 'assets/models/', tex: 'assets/textures/', S: 3.6, zFront: 4.5,
-  files: ['street_buildings.glb', 'prop_bench.glb', 'prop_bike.glb', 'prop_lamp.glb', 'street_store.glb'],
+  files: ['street_buildings.glb', 'prop_bench.glb', 'prop_bike.glb', 'prop_lamp.glb'], storeFile: 'street_store.glb',     // V16.5: cửa hàng ĐMX tải CUỐI CÙNG (ưu tiên 5), tới lúc đó vùng này dùng nhà cũ
   store: { x: 29.5, y: 1.9, z: .25, s: .85 },                                                       // cửa hàng Điện máy Xanh bên phải (file gốc: sàn y=-2.2, mặt tiền z=5, rộng x -20..19; đặt sao cho mặt tiền z≈4.5, mép trái sát nhà 9 Sạch)
   bld: [['bldD', 55, 1], ['bldC', 67, 1.1], ['bldD', -19, 1], ['bldA', -32, 1], ['bldB', -43, 1], ['bldC', -54, 1.05], ['bldA', -66, 1.1]],
   benches: [[15.5, 10.2], [-15.5, 8.6], [27, 10.2], [-27, 8.6]],
@@ -1796,21 +1801,25 @@ function moveBigSign(root, dx, dz) {                                            
   mesh.parent.add(m2); m2.updateMatrixWorld(true);
 }
 function streetTrees() { if (CROWD.T && CROWD.T.some(Boolean)) { STREET.trees.forEach(t => addStreetTree(t[0], t[1])); if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true; } }
-async function streetStart() {
-  const texP = streetTex();
-  const A = await (STREETP || (STREETP = streetLoad())); await texP; const [bl, bench, bike, lamp, store] = A; let n = 0;
-  if (store) {                                                                                 // cửa hàng Điện máy Xanh (logo đã vẽ sẵn vào texture biển)
+async function storeStart() {                                                                  // V16.5: cửa hàng ĐMX về sau cùng => thay nhà cũ ở vùng x 12..48
+  const store = await STOREP; if (!store) return;
+  {
     store.scene.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
     const sg = new THREE.Group(); sg.add(store.scene); sg.scale.setScalar(STREET.store.s || 1); sg.position.set(STREET.store.x, STREET.store.y, STREET.store.z); scene.add(sg);
     TREES.forEach(T => { const mv = STREET.treeMove.find(q => Math.abs(T.g.position.x - q[0]) < .01); if (mv) { T.g.position.x = mv[1]; T.g.updateMatrixWorld(true); } });   // cây cũ đứng trước mặt tiền cửa hàng dời ra đầu bên phải
     sg.updateMatrixWorld(true); if (STREET.bigSign) { try { moveBigSign(sg, STREET.bigSign.dx, STREET.bigSign.dz || 0); } catch (e) { console.warn('[9Sach] không dời được biển lớn:', e); } }
-    warmTex(sg); n++;
+    warmTex(sg);
   }
+  OLDB.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); }); OLDB.length = 0;
+}
+async function streetStart() {
+  const texP = streetTex();
+  const A = await (STREETP || (STREETP = streetLoad())); await texP; const [bl, bench, bike, lamp] = A; let n = 0;
   if (bl) {
     bl.scene.updateMatrixWorld(true); const bx = {};
     ['bldA', 'bldB', 'bldC', 'bldD'].forEach(k => { const o = bl.scene.getObjectByName(k); if (o) { o.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; (Array.isArray(m.material) ? m.material : [m.material]).forEach(q => { q.roughness = .9; q.metalness = 0; }); } }); bx[k] = [o, new THREE.Box3().setFromObject(o)]; } });
     if (Object.keys(bx).length) {
-      OLDB.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); }); OLDB.length = 0;                      // bỏ 6 khối nhà cũ (đã ẩn từ đầu nên người dùng không thấy cảnh cũ)
+      const keepOld = OLDB.filter(inStoreZone); OLDB.filter(m => !inStoreZone(m)).forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); }); OLDB.length = 0; OLDB.push(...keepOld);   // bỏ nhà cũ, trừ vùng cửa hàng ĐMX (giữ tới khi cửa hàng về)
       (LOW ? STREET.bld.filter((_, i) => i % 3 !== 2) : STREET.bld).forEach(d => {
         const e = bx[d[0]]; if (!e) return; const c = e[0].clone(true), b = e[1], g = new THREE.Group();
         c.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -b.max.z); g.add(c); g.scale.setScalar(STREET.S * (d[2] || 1)); g.position.set(d[1], 0, STREET.zFront); scene.add(g); g.updateMatrixWorld(true); n++;
@@ -1861,9 +1870,10 @@ async function glbStart() {                                                     
   await (GLBP || (GLBP = glbPrefetch())); tlog('bộ đọc glb sẵn sàng');
   const after = (n, p) => p.catch(e => console.error('[9Sach] ' + n + ' lỗi, giữ bản dựng bằng khối:', e)).then(() => { applyIBL(); if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true; tlog('đã dựng xong ' + n); });
   const street = after('phố', streetStart().catch(e => { OLDB.forEach(o => { o.visible = true; }); throw e; }));
-  const others = [after('xe buýt', busStart()), after('trạm', stopStart()), after('người/cây', crowdStart().then(() => streetTrees())), after('xe máy', ridersStart())];
+  const others = [after('cửa hàng ĐMX', storeStart()), after('xe buýt', busStart()), after('trạm', stopStart()), after('người/cây', crowdStart().then(() => streetTrees())), after('xe máy', ridersStart())];
   for (const c of EXTRA_GLB) loadGLB(c.url).then(x => { if (!x) return; const m = x.scene; m.position.set(c.pos[0], c.pos[1], c.pos[2]); m.rotation.y = c.rotY || 0; m.scale.setScalar(c.scale || 1); scene.add(m); m.updateMatrixWorld(true); playClips(x, m); });
-  Promise.allSettled([street, ...others]).then(() => { tlog('MỌI mô hình 3D đã xong'); loadPosters(); });
+  Promise.allSettled([street, ...others]).then(() => { LOADING = false; tlog('MỌI mô hình 3D đã xong'); loadPosters(); });
+  setTimeout(() => { LOADING = false; }, 60000);
   await street;
 }
 
@@ -1889,7 +1899,7 @@ let doorO1 = -1, doorO2 = -1, yawC = 0, pitC = 0, lookInit = false;
 const ROT_MAX = 2.4, ROT_K = 8;      // ROT_MAX = tốc độ quay camera tối đa (rad/giây); ROT_K = độ êm khi quay (càng nhỏ càng êm/trễ)
 function tick(now) {
   raf = requestAnimationFrame(tick);
-  const raw = now - last; if (raw < 14.5) return;                          // màn 120/144Hz: giới hạn ~60 khung/giây cho đều
+  const raw = now - last; if (raw < (LOADING ? 31 : 14.5)) return;                          // màn 120/144Hz: giới hạn ~60 khung/giây cho đều
   last = now; const dt = Math.min(.05, raw / 1000); adapt(raw);
   if (PERF) renderer.info.reset();
   target = clamp(scroller.scrollTop / maxScroll);
@@ -1974,14 +1984,15 @@ function applyPR() {
 }
 function resize() {
   if (!world || !renderer) return; const w = world.clientWidth, h = world.clientHeight; if (w < 10 || h < 10) return;
-  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, LOW ? 1 : 1.5); if (!Q.pr || Q.pr > Q.max) Q.pr = Math.min(Q.max, 1.25);   // V16: bắt đầu ở độ nét vừa phải (≤1.25), máy khỏe tự tăng dần tới 1.5
+  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, (LOW || WEAK) ? 1 : 1.5); if (!Q.pr || Q.pr > Q.max) Q.pr = Math.min(Q.max, 1.25);   // V16: bắt đầu ở độ nét vừa phải (≤1.25), máy khỏe tự tăng dần tới 1.5
   applyPR();
   camera.aspect = w / h; camera.fov = w / h < .75 ? 80 : w / h < 1.2 ? 68 : 58; camera.updateProjectionMatrix();   // FOV rộng hơn khi màn dọc
   stk.style.height = h + 'px'; stk.style.marginBottom = -h + 'px'; spc.style.height = (h * 7) + 'px';            // ruột cuộn khoảng 700vh
   maxScroll = Math.max(1, scroller.scrollHeight - scroller.clientHeight); scroller.scrollTop = target * maxScroll;
 }
-function degrade() {
+function degrade(hard) {
   const now = performance.now();
+  if (hard && useComposer) { useComposer = false; return; }                                   // V16.4: rất chậm => bỏ ngay toàn bộ hậu kỳ (bloom + tông phim), phần nặng nhất
   if (Q.up && now - Q.up < 8000) { Q.max = Math.max(Q.pr - .15, Q.min); Q.up = 0; }          // vừa tăng đã tụt => khóa trần, khỏi dao động
   if (Q.pr > Q.min + .01) { Q.pr = Math.max(Q.min, Q.pr - .2); applyPR(); }
   else if (bloom && bloom.enabled) bloom.enabled = false;
@@ -1990,9 +2001,10 @@ function degrade() {
 function adapt(raw) {
   if (performance.now() < Q.warm) { Q.n = 0; Q.acc = 0; return; }                            // 5 giây đầu: khung hình chậm do nạp texture/biên dịch, không tính để khỏi tụt độ nét
   if (raw > 250) { Q.n = 0; Q.acc = 0; return; }                                              // vừa mở lại tab / bị treo: bỏ qua
-  Q.acc += raw; Q.n++; if (Q.n < 24) return;
+  Q.acc += raw; Q.n++; if (Q.n < 12) return;
   const avg = Q.acc / Q.n, now = performance.now(); Q.acc = 0; Q.n = 0;
-  if (avg > 25) { Q.good = 0; if (now - Q.t > 700) { Q.t = now; degrade(); } }
+  const TK = LOADING ? 1.6 : 1;                                                               // đang giới hạn 30 khung/giây (≈33ms) nên ngưỡng nới ra
+  if (avg > 25 * TK) { Q.good = 0; if (now - Q.t > 400) { Q.t = now; degrade(avg > 45 * TK); } }
   else if (avg < 18.5) { if (++Q.good >= 3 && Q.pr < Q.max - .01 && now - Q.t > 3000) { Q.good = 0; Q.t = now; Q.up = now; Q.pr = Math.min(Q.max, Q.pr + .1); applyPR(); } }
   else Q.good = 0;
 }
@@ -2100,13 +2112,14 @@ const tmo = (p, ms) => Promise.race([p, wait(ms).then(() => { throw new Error('q
 async function boot() {
   if (GLB_ON) GLBP = glbPrefetch();                                                                  // bắt đầu tải xe + trạm ngay, chạy song song với việc dựng cảnh
   loadProductImages();                                                                               // V16: ảnh sản phẩm / poster tải ngay từ đầu, song song với mọi bước khác
-  const POSTP = LOW ? null : Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
+  const POSTP = (LOW || /[?&]weak/.test(location.search)) ? null : Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
   if (POSTP) POSTP.catch(() => { });
   import('three/addons/objects/Sky.js').catch(() => { }); import('three/addons/utils/BufferGeometryUtils.js').catch(() => { });   // V16: nạp trước các module phụ, đến bước dùng là có sẵn
   world = $('world'); scroller = $('scroller'); stk = $('stk'); spc = $('spc'); canvas = document.createElement('canvas'); $('wcv').appendChild(canvas);
   renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
+  try { const gl = renderer.getContext(), ex = gl.getExtension('WEBGL_debug_renderer_info'), g = ex ? String(gl.getParameter(ex.UNMASKED_RENDERER_WEBGL)) : ''; WEAK = !LOW && !/[?&]strong/.test(location.search) && /Intel|Mali|PowerVR|Adreno|SwiftShader|llvmpipe|Basic Render|Microsoft/i.test(g); tlog('GPU: ' + g + (WEAK ? ' → máy đồ họa yếu: bỏ bloom, bóng nhẹ' : '')); } catch (e) { }
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
-  if (!LOW) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; }   // bóng vẽ 1 lần (cảnh tĩnh); chỉ vẽ lại khi cửa chuyển động
+  if (!LOW) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = WEAK ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; }   // bóng vẽ 1 lần (cảnh tĩnh); chỉ vẽ lại khi cửa chuyển động
   if (PERF) renderer.info.autoReset = false;
   camera = new THREE.PerspectiveCamera(60, 1, .1, 220); camera.rotation.order = 'YXZ';
   posC = new THREE.CatmullRomCurve3(CAM.map(k => new THREE.Vector3(k[1][0], k[1][1], k[1][2])), false, 'centripetal');
@@ -2119,7 +2132,7 @@ async function boot() {
   const fontP = Promise.race([(async () => { const t0 = performance.now(); while (!window.__gf && performance.now() - t0 < 1200) await wait(40); await document.fonts.load('700 40px "Be Vietnam Pro"'); })(), wait(1600)]).catch(() => { });   // V16: font (CSS Google Fonts nay tải không chặn trang: index.html đặt window.__gf khi xong) và logo tải cùng lúc
   const logoP = Promise.race([new Promise(res => new THREE.ImageLoader(mgr).load('assets/logo.png', res, undefined, () => res(null))), wait(2000).then(() => null)]);
   await fontP; await fin('font'); const logo = await logoP; await fin('logo');
-  if (!LOW) {                                                                                      // bloom nhẹ, chỉ máy mạnh
+  if (!LOW && !WEAK) {                                                                             // bloom nhẹ, chỉ máy mạnh
     try {
       const [a, b, c, d, e2] = await tmo(POSTP, 5000);
       composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 2 })); composer.addPass(new b.RenderPass(scene, camera));
@@ -2168,7 +2181,7 @@ async function boot() {
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
   await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
-  await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 3000; setTimeout(openGate, 350);
+  await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 1200; setTimeout(openGate, 350);
 }
 
 API.version = 'v16';
