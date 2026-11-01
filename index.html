@@ -15,8 +15,10 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js">
-<link rel="modulepreload" href="./js/scene.js?v=19">
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="modulepreload" href="./js/scene.js?v=20">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="gf" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600&family=Playfair+Display:wght@600;700&display=swap" media="print" onload="this.media='all';window.__gf=1">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet"></noscript>
 <style>
 :root{--g9:#0A261D;--g8:#103A2D;--g6:#1C634C;--g4:#3C9272;--gold:#C9A24B;--gold2:#E9D8A6;--bg:#EEF2EE;--card:#fff;--ink:#14241D;--mut:#6A7B73;--line:#DCE4DE;--serif:'Playfair Display',Georgia,serif;--sans:'Be Vietnam Pro','Segoe UI',Arial,sans-serif;--sb:264px}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -840,7 +842,7 @@ const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let VIEW='list',WLOAD=null;
 function load3d(){
  if(WLOAD)return WLOAD;
- WLOAD=import('./js/scene.js?v=19').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
+ WLOAD=import('./js/scene.js?v=20').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
  return WLOAD}
 function setView(v,save){
  if(v==='3d'&&!GL_OK){v='list';toast('Thiết bị không chạy được cảnh 3D, dùng chế độ danh sách')}
