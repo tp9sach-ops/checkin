@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chẩn đoán 3D 9 Sạch</title>
+<style>body{font:14px/1.5 system-ui,sans-serif;background:#0b1511;color:#e6efe9;margin:0;padding:18px}h1{font-size:18px;margin:0 0 4px}p{color:#9db5a8;margin:0 0 14px}
+.r{display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid #1d2f27;font-family:ui-monospace,monospace;font-size:12.5px}.r b{flex:none;width:44px}.ok b{color:#6fdc8c}.bad b{color:#ff7b7b}.warn b{color:#ffd166}.r span{word-break:break-all}
+button{margin:12px 0;padding:10px 18px;border:0;border-radius:999px;background:#c9a24b;color:#0a261d;font-weight:600;cursor:pointer}</style></head><body>
+<h1>Chẩn đoán cảnh 3D</h1><p>Chờ vài giây rồi chụp toàn bộ trang này gửi lại. Dòng ĐỎ là chỗ hỏng.</p><button onclick="location.reload()">Chạy lại</button><div id="o"></div>
+<script>
+const o=document.getElementById('o');function row(k,t,m){const d=document.createElement('div');d.className='r '+k;d.innerHTML='<b>'+(k==='ok'?'OK':k==='bad'?'LỖI':'LƯU Ý')+'</b><span></span>';d.lastChild.textContent=t+(m?' — '+m:'');o.appendChild(d)}
+const V='0.160.0',CDN='https://cdn.jsdelivr.net/npm/three@'+V+'/';
+const files=['assets/draco/draco_decoder.wasm','assets/draco/draco_wasm_wrapper.js','assets/models/street_buildings.glb','assets/models/street_store.glb','assets/models/prop_bench.glb','assets/models/prop_bike.glb','assets/models/prop_lamp.glb','assets/models/japanese_bus_toei_bus_tokyo.glb','assets/models/standard_bus_stop.glb','assets/models/tree_linden.glb','assets/models/tree_lowpoly.glb','assets/models/rider_karlo.glb','assets/models/rider_knievel.glb','assets/models/rider_vespa.glb','assets/models/rider_sammy.glb','assets/textures/road.webp','assets/textures/paver.webp','assets/logo.png'].concat([1,2,3,4,5,6,7,8].map(i=>'assets/models/person'+i+'.glb'));
+(async()=>{
+ row('ok','Trang','đang chạy tại '+location.href);
+ for(const f of files){const t=performance.now();try{const r=await fetch(f+'?d='+Date.now());const b=r.ok?await r.arrayBuffer():null;const ms=Math.round(performance.now()-t);
+  if(!r.ok)row('bad',f,'HTTP '+r.status+' (file không có trên host)');
+  else{const head=new Uint8Array(b.slice(0,4));const magic=String.fromCharCode(...head);const isGlb=f.endsWith('.glb');
+   if(isGlb&&magic!=='glTF')row('bad',f,'có file nhưng không phải .glb (đầu file "'+magic+'"; thường là trang 404/LFS)');
+   else row(ms>4000?'warn':'ok',f,(b.byteLength/1024).toFixed(0)+' KB, '+ms+' ms')}}catch(e){row('bad',f,'không tải được: '+e.message)}}
+ for(const m of ['build/three.module.js','examples/jsm/loaders/GLTFLoader.js','examples/jsm/loaders/DRACOLoader.js']){const t=performance.now();try{const r=await Promise.race([fetch(CDN+m),new Promise((_,j)=>setTimeout(()=>j(new Error('quá 10 giây')),10000))]);row(r.ok?'ok':'bad','jsdelivr '+m,'HTTP '+r.status+', '+Math.round(performance.now()-t)+' ms')}catch(e){row('bad','jsdelivr '+m,e.message+' (mạng chặn/chậm jsdelivr)')}}
+ try{const r=await fetch('https://www.gstatic.com/draco/versioned/decoders/1.5.6/draco_decoder.wasm',{mode:'no-cors'});row('ok','gstatic draco (dự phòng)','truy cập được')}catch(e){row('warn','gstatic draco (dự phòng)','không truy cập được: '+e.message)}
+ try{const r=await fetch('assets/draco/draco_decoder.wasm');const b=await r.arrayBuffer();await WebAssembly.compile(b);row('ok','Biên dịch draco_decoder.wasm','được')}catch(e){row('bad','Biên dịch draco_decoder.wasm',e.message)}
+ try{const c=document.createElement('canvas');const g=c.getContext('webgl2');row(g?'ok':'bad','WebGL2',g?g.getParameter(g.VERSION):'không có')}catch(e){row('bad','WebGL2',e.message)}
+ row('ok','Máy','nhân CPU '+navigator.hardwareConcurrency+', RAM '+(navigator.deviceMemory||'?')+' GB'+((navigator.hardwareConcurrency<=4||navigator.deviceMemory<=2)?' → bị xếp vào chế độ máy yếu (LOW)':''));
+ row('ok','Xong','chụp màn hình trang này');
+})();
+</script></body></html>
