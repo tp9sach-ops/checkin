@@ -15,7 +15,7 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js">
-<link rel="modulepreload" href="./js/scene.js?v=21">
+<link rel="modulepreload" href="./js/scene.js?v=22">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link id="gf" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600&family=Playfair+Display:wght@600;700&display=swap" media="print" onload="this.media='all';window.__gf=1">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet"></noscript>
@@ -415,6 +415,7 @@ body:not(.lm) .tlogo{display:block}
 <div class="etb" id="etb" hidden><span>Đang chỉnh sửa: bấm vào chữ có viền nét đứt để sửa</span><button class="btn gold sm" id="etbSave">Lưu thay đổi</button><button class="btn ghost sm" id="etbCancel">Hủy</button><button class="btn ghost sm" id="etbReset">Khôi phục mặc định</button></div>
 <div class="toast" id="toast" role="status"></div>
 <a class="fab" id="fab" target="_blank" rel="noopener" aria-label="Liên hệ hỗ trợ" title="Liên hệ hỗ trợ"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></a>
+<script>if('serviceWorker' in navigator&&location.protocol==='https:')addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})});</script>
 <script>
 /* ===== LOGO: chỉ khai báo một lần, tự gắn vào favicon, thanh bên và chân trang ===== */
 const LOGO_URL="https://drive.google.com/thumbnail?id=1jvTZwz2rs6yOT-A7h3pyihV-yatTnxys&sz=w256";
@@ -842,7 +843,7 @@ const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let VIEW='list',WLOAD=null;
 function load3d(){
  if(WLOAD)return WLOAD;
- WLOAD=import('./js/scene.js?v=21').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
+ WLOAD=import('./js/scene.js?v=22').then(()=>window.World.start()).catch(err=>{console.error(err);WLOAD=null;if(VIEW==='3d'){setView('list');toast('Không tải được cảnh 3D, đã chuyển sang danh sách')}});
  return WLOAD}
 function setView(v,save){
  if(v==='3d'&&!GL_OK){v='list';toast('Thiết bị không chạy được cảnh 3D, dùng chế độ danh sách')}
