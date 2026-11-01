@@ -5,7 +5,7 @@
 > Cách làm: điều tra trước khi sửa, sửa nhỏ nhất có thể, không báo "đã test" khi chưa chạy. Với sửa code nhỏ: đưa đoạn "find" đầy đủ + code thay thế; với scene.js: trả cả file.
 
 ## 1. Cấu trúc
-- `index.html` — nạp `import('./js/scene.js?v=16')` (V15 đã tăng 15 → 16; mỗi lần sửa scene.js phải tăng số này).
+- `index.html` — nạp `import('./js/scene.js?v=19')` (V15.3 đã tăng 15 → 19; mỗi lần sửa scene.js phải tăng số này).
 - `js/scene.js` — module chính. Khối: V12 (bus, xe máy, người, trạm), V13 (người + cây .glb), V14 (xe máy + người lái .glb), **V15 (cảnh quan phố, mới)**.
 - `assets/models/*.glb` (Draco/WebP) và **`assets/textures/*.webp`** (mới).
 - Cảnh `matrixWorldAutoUpdate=false` ⇒ vật thêm mới gọi `updateMatrixWorld(true)`. Bóng vẽ 1 lần ⇒ vật chuyển động `castShadow=false`. Test: serve http, thêm `?perf` xem HUD.
@@ -34,6 +34,31 @@ Code (`js/scene.js`):
 - Thiếu file ⇒ giữ nguyên bản cũ (nhà khối, đường vẽ code). Nhà cũ chỉ bị gỡ khi nạp được `street_buildings.glb`.
 - Chỉnh nhanh trong `STREET`: `S` (tỉ lệ nhà, 3.6 ⇒ cao ~15 m), `zFront` (4.5), `bld` = `[tên nhà, x tâm, hệ số]` (10 nhà, LOW chỉ 6), `benches/bikes/lamps` = vị trí trên vỉa hè (z≈8.6–12.2), `trees` = `[x, loại 0|1]` (dùng `tree_linden`/`tree_lowpoly` của V13, đặt z=11.4, có gió lay).
 - Mặt đường: `road.webp` lặp mirrored `repeat(75,150)`; vỉa hè `paver.webp` `repeat(62.5,5.5)`. Vạch kẻ, vạch qua đường, gờ vỉa, thảm đỏ/cẩm thạch trước cửa KHÔNG đổi.
+
+## 3b. V15.1 — sửa "load chậm + thấy cảnh cũ rồi mới đổi"
+- Nhà cũ (`OLDB`) bị ẩn ngay từ lúc dựng (`visible = !GLB_ON`); chỉ hiện lại nếu nhà mới không nạp được.
+- `streetTex()` trả Promise; `streetStart()` chờ ảnh đường/vỉa hè nạp + đẩy lên GPU (`initTexture`, `warmTex`) trước khi màn hình tải tắt.
+- `glbStart()` chạy `crowdStart→streetStart` song song với `ridersStart` (trước đây nối tiếp); thời gian chờ tối đa của màn hình tải 7s → 12s (`wait(12000)` trong boot).
+- CHƯA đo thời gian thật trên máy/mạng của ptg; nếu vẫn chậm, kiểm tra tổng dung lượng assets (~2 MB mới) và Draco decoder từ gstatic.
+
+## 3c. V15.2 — CỬA HÀNG ĐIỆN MÁY XANH bên phải
+- File `assets/models/street_store.glb` (470 KB, 16k tam giác) từ `super_store_with_pizza_hut__bakery.glb`; tạo bằng `tools/build_store.mjs` (cần `glbs/store.glb` + `glbs/dmx_logo.png`).
+- Logo Điện máy Xanh được VẼ VÀO texture: biển lớn "SUPER SALE" (Atlas002_E, ô x350..1020,y0..178, lật dọc) và biển đỏ nhỏ "SUPER MARKET" (Atlas001_E, ô x868..958,y480..890, chuyển vị). Đã xem lại ảnh render: cả 2 đúng chiều. Biển cột quảng cáo đứng ngoài cửa vẫn là hình siêu thị gốc.
+- `STREET.store = {x:35, y:2.23, z:-.5}` (sàn y=-2.2 trong file => nâng +2.23 để nổi trên mặt đường; mặt tiền z=5 => 4.5; rộng x -20..19 => phủ x≈14.6..54). 3 nhà bên phải (bldC/B/A) đã bỏ khỏi `STREET.bld`; nhà bldD dời sang x=66, bldC x=78. Ghế bên phải dời z=10.2 (tránh đè nền cửa hàng).
+- Nội thất cửa hàng vẫn còn (nhìn xuyên kính). Biển Pizza Hut bên trong vẫn có.
+
+## 3c2. V15.3 — TỐC ĐỘ VÀO TRANG + DỜI CỬA HÀNG/CÂY
+Báo cáo của ptg: màn hình tải đứng ở ~10% hơn 2 phút mới vào 3D (ảnh DevTools lúc 91%: đang chờ bước cuối). KHÔNG tái hiện được độ trễ 2 phút trong môi trường test (thiếu bus/trạm/người/cây V13/V14 của ptg, mạng khác) => đã làm biện pháp phòng ngừa, CHƯA đo được trên máy ptg:
+- Mọi bước tuỳ chọn có hạn chót (`tmo(p, ms)`): nạp bloom/composer 5s, Sky 5s, BufferGeometryUtils 5s, GLTFLoader+DRACOLoader 8s, logo 3s; chờ file .glb của màn hình tải 12s → 8s (`wait(8000)` trong boot).
+- `index.html`: thêm `<link rel="modulepreload">` cho three, GLTFLoader, DRACOLoader, Sky, EffectComposer, UnrealBloomPass, OutputPass và `./js/scene.js?v=19` để trình duyệt tải song song ngay từ đầu. `DRACOLoader.preload()` tải sẵn bộ giải Draco.
+- Console ghi thời gian từng bước: dòng `[9Sach] +NNNms xong bước ...` / `đã tải xe buýt + trạm` / `đã dựng xong người/cây/xe máy/phố`. Nếu vẫn chậm: xin ptg copy các dòng này (và tab Network, cột Time/Waterfall, cho các file >1 MB). Trong test, bước `facade` mất ~3.2s CPU (stageFacade/stageTiger) — có thể nặng hơn trên điện thoại.
+- Nghi ngờ chưa kiểm: kích thước `japanese_bus_toei_bus_tokyo.glb`, `standard_bus_stop.glb`, `person*.glb`, `tree_*.glb` (chưa thấy), logo.png, Google Fonts (link CSS chặn render trong <head>), jsdelivr/gstatic chậm ở VN.
+- Dời cửa hàng: `STREET.store = {x:29.5, y:1.9, z:.25, s:.85}` (thu nhỏ 0.85, mép sàn x≈12.2 sát thảm cẩm thạch 9 Sạch, KHÔNG được < 12 kẻo đè thảm), nhà bldD x=55, bldC x=67. Cây cũ ở x=24 dời sang x=50; bỏ 2 cây thêm ở x=19, 35, 46 (bên phải chỉ còn cây x=58); `STREET.trees` = [[-19,0],[-35,1],[-46,0],[58,1]].
+
+## 3d. LỖI "Hệ thống đang bận" khi tạo đơn khách sỉ (module `don`, ERP `tp9sach-ops.github.io/erp/`)
+- ptg gửi file `Untitled-1-261101.md` = TOÀN BỘ HTML FRONT-END của ERP (16.947 dòng), KHÔNG có code Apps Script phía máy chủ. Chuỗi "Hệ thống đang bận, vui lòng thử lại sau vài giây" KHÔNG có trong file => do hàm máy chủ `submitOrder(data, isDebt, editInfo)` ném ra (nghi `LockService.tryLock` hết thời gian). Front-end gọi ở ~dòng 5011-5039 (`google.script.run ... .submitOrder`), lỗi hiện qua `alert('Lỗi gửi đơn: '+...)`.
+- Đã đưa cho ptg bản vá phía front-end: tự thử lại tối đa 3 lần (2.5s/5s/7.5s) khi lỗi chứa "đang bận" (2 đoạn find/replace trong handleOrderSubmit). CHƯA xác nhận ptg đã áp dụng/chạy.
+- Sửa gốc cần code máy chủ: hàm `submitOrder` và chỗ lấy khóa (LockService) trong Code.gs — đã xin ptg gửi. Hướng: tăng thời gian chờ khóa (`waitLock(30000)` thay `tryLock` ngắn), chỉ khóa quanh đoạn ghi Sheet, đưa việc chậm (gửi Zalo, tạo PDF, đồng bộ) ra ngoài khóa.
 
 ## 4. ĐÃ kiểm / CHƯA kiểm chứng
 - Đã chạy bằng Chromium headless (SwiftShader): cảnh vào được, console `V15: đã dựng 6 nhà, 4 ghế, 3 xe đạp, 4 đèn, cây thêm 6` (6 nhà vì máy test được tính là LOW), chụp ảnh thấy nhà mới 2 bên, đường nhựa xám có vạch, ghế/xe đạp/đèn ở hai bên vỉa hè.
