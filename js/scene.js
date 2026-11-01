@@ -675,7 +675,7 @@ function stageObjects() {
    SẢN PHẨM 3D + TRANH ĐÈN (ảnh poster đặt trong /assets/sp/*.jpg)
    Thiếu ảnh nào thì tự vẽ poster thay thế, trang vẫn chạy bình thường.
    ========================================================================== */
-const PIMG = {};                                       // ảnh poster đã tải: PIMG.ladua, PIMG.cut ...
+const PIMG = {}, PLATE = {};                           // ảnh poster đã tải: PIMG.ladua, PIMG.cut ... ; PLATE[key] = texture poster vẽ tạm, chờ ảnh thật về thì thay vào (V16)
 const POSTERS = {                                       // khóa ảnh → [tên hiển thị, màu chủ đạo]
   truyenthong: ['Ngàn lớp truyền thống', '#f3c614'], ladua: ['Phú sĩ lá dứa', '#7bbf2e'], khoaimon: ['Phú sĩ khoai môn', '#b58ad8'],
   thantre: ['Phô mai than tre', '#3a3a3a'], choco: ['Phú sĩ choco hạnh nhân', '#6b3f26'], nganlop: ['Ngàn lớp lá dứa', '#59b52a'],
@@ -685,21 +685,26 @@ const FLAV = [['truyenthong', 'Truyền thống', '#f4cf1e', '#4a3300'], ['ladua
   ['thantre', 'Than tre', '#2a2a2c', '#ffffff'], ['choco', 'Choco hạnh nhân', '#5a3321', '#ffffff']];
 const rng = s => () => (s = (s * 16807) % 2147483647) / 2147483647;
 function imgTex(img) { const t = new THREE.Texture(img); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = LOW ? 1 : 4; t.needsUpdate = true; return t; }
-async function loadProductImages() {
+let PIP = null;
+function loadProductImages() {                                                                    // V16: gọi 1 lần ngay đầu boot() (tải song song với dựng cảnh); ảnh nào về muộn sẽ được thay vào poster vẽ tạm
+  if (PIP) return PIP;
   const ld = new THREE.ImageLoader(), get = u => new Promise(r => ld.load(u, r, undefined, () => r(null)));
   const keys = Object.keys(POSTERS).concat(['cut']);
-  const run = Promise.all(keys.map(k => get('assets/sp/' + k + (k === 'cut' ? '.png' : '.jpg')).then(i => { if (i) PIMG[k] = i; })));
-  await Promise.race([run, wait(8000)]);
+  return PIP = Promise.all(keys.map(k => get('assets/sp/' + k + (k === 'cut' ? '.png' : '.jpg')).then(i => {
+    if (!i) return; PIMG[k] = i;
+    (PLATE[k] || []).forEach(t => { try { t.dispose(); t.image = i; t.needsUpdate = true; } catch (e) { } }); PLATE[k] = [];
+  })));
 }
 function posterTex(key) {                                // ảnh thật, hoặc poster tự vẽ nếu thiếu file
   if (PIMG[key]) return imgTex(PIMG[key]);
   const [name, col] = POSTERS[key];
-  return canvasTex(512, 512, (g, w, h) => {
+  const tx = canvasTex(512, 512, (g, w, h) => {
     const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#ffd34a'); gr.addColorStop(1, '#f2a900'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
     g.fillStyle = col; g.beginPath(); g.arc(w / 2, h * .62, 150, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(w / 2 - 40, h * .62 - 50, 60, 0, 7); g.fill();
     g.fillStyle = '#1f7a3a'; g.strokeStyle = '#fff'; g.lineWidth = 10; g.textAlign = 'center'; g.font = `800 46px ${FONT}`; g.strokeText('BÁNH SẦU RIÊNG', w / 2, 70); g.fillText('BÁNH SẦU RIÊNG', w / 2, 70);
     g.font = `800 40px ${FONT}`; g.strokeText(name.toUpperCase(), w / 2, 130); g.fillStyle = '#c8102e'; g.fillText(name.toUpperCase(), w / 2, 130);
   }).t;
+  (PLATE[key] = PLATE[key] || []).push(tx); return tx;
 }
 
 /* ---- bánh sầu riêng: mặt bánh vẽ bằng canvas (vết cắt, dừa sợi, hạnh nhân) ---- */
@@ -1549,8 +1554,10 @@ function applyIBL() {                                                           
 }
 async function glbInit() {
   try {
+    const probe = fetch('assets/draco/draco_decoder.wasm', { method: 'HEAD' }).then(r => r.ok).catch(() => false);                        // V16: bộ giải Draco nằm ngay trên host (khỏi chờ gstatic); thiếu file thì dùng gstatic
     const [a, b] = await tmo(Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/DRACOLoader.js')]), 8000);
-    const dr = new b.DRACOLoader(); dr.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/'); try { dr.preload(); } catch (e) { }   // tải sẵn bộ giải Draco
+    const local = await tmo(probe, 2500).catch(() => false);
+    const dr = new b.DRACOLoader(); dr.setDecoderPath(local ? 'assets/draco/' : 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/'); try { dr.preload(); } catch (e) { }   // tải sẵn bộ giải Draco
     GLTF = new a.GLTFLoader(); GLTF.setDRACOLoader(dr);
   } catch (e) { GLTF = null; console.warn('[9Sach] không nạp được GLTFLoader:', e); }
 }
@@ -1722,8 +1729,11 @@ const STREET = {
   benches: [[15.5, 10.2], [-15.5, 8.6], [27, 10.2], [-27, 8.6]],
   bikes: [[17.3, 9.5, 1.2], [-17.3, 9.3, -1.3], [-29.2, 9.2, 1.0]],
   lamps: [21.5, -21.5, 31, -31],
-  trees: [[-19, 0], [-35, 1], [-46, 0], [58, 1]]                                   // bên phải chỉ giữ cây ở đầu cửa hàng Điện máy Xanh (không che mặt tiền)
+  trees: [[-19, 0], [-35, 1], [-46, 0], [61, 1]],                                  // bên phải chỉ giữ cây ngoài đầu cửa hàng Điện máy Xanh (không che mặt tiền)
+  treeMove: [[24, 54], [13.5, 47.5]],                                              // V16: cây cũ [x cũ -> x mới]: cả 2 cây trước mặt tiền cửa hàng đều dời ra đầu phải (cây x=13.5 từng che biển nhỏ + biển lớn)
+  bigSign: { dx: -11, dz: .03 }                                                  // V16: biển lớn "Điện máy XANH" dời sang trái (dx mét, âm = trái) để lọt vào khung hình đầu tiên; dz = nhích ra trước chút để khỏi nhấp nháy với tường
 };
+let STREET_DONE = false;
 let STREETP = null;
 function streetLoad() { return Promise.all(STREET.files.map(f => loadGLB(STREET.dir + f))); }
 function streetTex() {                                                                         // mặt đường + vỉa hè bằng ảnh thật (nạp xong mới thay, lỗi thì giữ ảnh vẽ bằng code)
@@ -1742,14 +1752,34 @@ function addStreetTree(x, kind) {                                               
   B(g, M.stone, [2.2, .16, 2.2], [0, .08, 0]); B(g, std(0x3b2a1c, { roughness: 1 }), [1.7, .18, 1.7], [0, .1, 0]); g.add(t.root);
   TREES.push({ g, k: 1, ry: 0, blobs: [], exc: 0, proc: { visible: false }, sw: t.U }); g.updateMatrixWorld(true);
 }
+function moveBigSign(root, dx, dz) {                                                           // V16: tách riêng 2 tam giác của biển lớn (vùng ảnh x350..1020,y0..178 trong atlas Atlas002_E) rồi dời sang trái
+  let mesh = null; root.traverse(o => { if (!mesh && o.isMesh && o.material && o.material.name === 'Atlas002_E') mesh = o; });
+  if (!mesh || !mesh.geometry.index) return;
+  const g = mesh.geometry, uv = g.attributes.uv, ix = g.index, sign = [], rest = [];
+  for (let t = 0; t < ix.count; t += 3) {
+    const a = ix.getX(t), b = ix.getX(t + 1), c = ix.getX(t + 2);
+    const u = (uv.getX(a) + uv.getX(b) + uv.getX(c)) / 3, v = (uv.getY(a) + uv.getY(b) + uv.getY(c)) / 3;
+    ((u > .33 && v < .18) ? sign : rest).push(a, b, c);
+  }
+  if (!sign.length) return;
+  const g2 = new THREE.BufferGeometry(); for (const k in g.attributes) g2.setAttribute(k, g.attributes[k]); g2.setIndex(sign);
+  g.setIndex(rest);
+  const m2 = new THREE.Mesh(g2, mesh.material); m2.name = 'BigSign'; m2.castShadow = false; m2.receiveShadow = false;
+  m2.position.copy(mesh.position); m2.quaternion.copy(mesh.quaternion); m2.scale.copy(mesh.scale);
+  root.updateMatrixWorld(true);
+  const lin = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert());
+  m2.position.add(new THREE.Vector3(dx, 0, dz).applyMatrix3(lin));                             // đổi vector "trái dx mét" ở hệ thế giới sang hệ cục bộ của nút cha
+  mesh.parent.add(m2); m2.updateMatrixWorld(true);
+}
 async function streetStart() {
   const texP = streetTex();
   const A = await (STREETP || (STREETP = streetLoad())); await texP; const [bl, bench, bike, lamp, store] = A; let n = 0;
   if (store) {                                                                                 // cửa hàng Điện máy Xanh (logo đã vẽ sẵn vào texture biển)
     store.scene.traverse(m => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
     const sg = new THREE.Group(); sg.add(store.scene); sg.scale.setScalar(STREET.store.s || 1); sg.position.set(STREET.store.x, STREET.store.y, STREET.store.z); scene.add(sg);
-    TREES.forEach(T => { if (Math.abs(T.g.position.x - 24) < .01) { T.g.position.x = 50; T.g.updateMatrixWorld(true); } });   // cây cũ đứng trước mặt tiền cửa hàng (x=24) dời ra đầu bên phải (x=50)
-    sg.updateMatrixWorld(true); warmTex(sg); n++;
+    TREES.forEach(T => { const mv = STREET.treeMove.find(q => Math.abs(T.g.position.x - q[0]) < .01); if (mv) { T.g.position.x = mv[1]; T.g.updateMatrixWorld(true); } });   // cây cũ đứng trước mặt tiền cửa hàng dời ra đầu bên phải
+    sg.updateMatrixWorld(true); if (STREET.bigSign) { try { moveBigSign(sg, STREET.bigSign.dx, STREET.bigSign.dz || 0); } catch (e) { console.warn('[9Sach] không dời được biển lớn:', e); } }
+    warmTex(sg); n++;
   }
   if (bl) {
     bl.scene.updateMatrixWorld(true); const bx = {};
@@ -1764,6 +1794,7 @@ async function streetStart() {
     }
   }
   if (!n) OLDB.forEach(o => { o.visible = true; });                                          // không nạp được nhà mới => hiện lại nhà cũ
+  STREET_DONE = true;
   if (bench) STREET.benches.forEach(p => placeProp(bench, p[0], p[1], 0));
   if (bike) STREET.bikes.forEach(p => placeProp(bike, p[0], p[1], p[2]));
   if (lamp) STREET.lamps.forEach(x => placeProp(lamp, x, 12.2, 0));
@@ -1811,6 +1842,22 @@ async function glbStart() {
   applyIBL();                                                                                 // vật liệu mới nhận ánh sáng môi trường cùng độ mạnh với cảnh
 }
 
+/* ============================ V16: CẮT CẢNH THEO VỊ TRÍ CAMERA ============================
+   Khi camera còn ở ngoài phố (z > zHide) thì không vẽ các khối nằm sâu trong cửa hàng (toàn bộ z < zIn): ở khung hình đầu tiên (nặng nhất) bớt ~1/3 số lần vẽ.
+   Vào gần cửa (z < zShow) thì hiện lại hết trước khi cửa kính mở (tiến độ 13%). Khi bóng cần vẽ lại (shadowMap.needsUpdate) thì hiện hết trong khung đó để bóng không mất.
+   Chỉnh nhanh: ZONE.zIn (khối nằm hoàn toàn sau mặt phẳng này mới bị ẩn), zHide / zShow (ngưỡng ẩn / hiện theo z camera). ZONE.on = false để tắt. */
+const ZONE = { on: true, list: [], hidden: false, zIn: -6.2, zHide: 15, zShow: 13.5 };
+function zoneInit() {
+  if (!ZONE.on) return; const bb = new THREE.Box3(); ZONE.list.length = 0;
+  scene.children.forEach(o => { if (o.isLight || o.isCamera || !o.visible || o.userData.noZone) return; bb.setFromObject(o); if (!bb.isEmpty() && bb.max.z < ZONE.zIn) ZONE.list.push(o); });
+  tlog('V16: ' + ZONE.list.length + '/' + scene.children.length + ' khối sâu trong cửa hàng sẽ được ẩn khi camera còn ngoài phố');
+}
+function zoneStep(cz) {
+  if (!ZONE.list.length) return;
+  const need = renderer.shadowMap.enabled && renderer.shadowMap.needsUpdate, hide = (cz > (ZONE.hidden ? ZONE.zShow : ZONE.zHide)) && !need;
+  if (hide === ZONE.hidden) return; ZONE.hidden = hide; ZONE.list.forEach(o => { o.visible = !hide; });
+}
+
 /* ============================ VÒNG LẶP ============================ */
 const tmpV2 = new THREE.Vector3();
 let doorO1 = -1, doorO2 = -1, yawC = 0, pitC = 0, lookInit = false;
@@ -1839,6 +1886,7 @@ function tick(now) {
     else camera.rotation.set(pitC, yawC, 0);
   } else camera.rotation.set(pitC, yawC, 0);
   ambientCam(now, dt);
+  zoneStep(camera.position.z);
   camera.updateMatrixWorld();
   windStep(now, dt);
   lifeStep(now, dt);
@@ -1891,7 +1939,7 @@ function doSnap() {
   if (bd < SNAP_R && bd > 1e-4) { snapRest = best; snapSkip = performance.now() + 90; scroller.style.scrollBehavior = 'auto'; scroller.scrollTop = best * maxScroll; }
   else snapRest = target;
 }
-const Q = { warm: 0, pr: 0, max: 1, min: .85, acc: 0, n: 0, good: 0, t: 0, up: 0 };            // chất lượng thích ứng: tự giảm độ phân giải/hiệu ứng khi máy yếu
+const Q = { warm: 0, pr: 0, max: 1, min: .7, acc: 0, n: 0, good: 0, t: 0, up: 0 };            // chất lượng thích ứng: tự giảm độ phân giải/hiệu ứng khi máy yếu
 const PERF = /[?&]perf/.test(location.search); let PERFEL = null; const PF = { n: 0, t: 0 };
 let rsT = 0; function resizeSoon() { clearTimeout(rsT); rsT = setTimeout(resize, 140); }
 function applyPR() {
@@ -1901,7 +1949,7 @@ function applyPR() {
 }
 function resize() {
   if (!world || !renderer) return; const w = world.clientWidth, h = world.clientHeight; if (w < 10 || h < 10) return;
-  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, LOW ? 1 : 1.75); if (!Q.pr || Q.pr > Q.max) Q.pr = Q.max;
+  W = w; H = h; Q.max = Math.min(window.devicePixelRatio || 1, LOW ? 1 : 1.5); if (!Q.pr || Q.pr > Q.max) Q.pr = Math.min(Q.max, 1.25);   // V16: bắt đầu ở độ nét vừa phải (≤1.25), máy khỏe tự tăng dần tới 1.5
   applyPR();
   camera.aspect = w / h; camera.fov = w / h < .75 ? 80 : w / h < 1.2 ? 68 : 58; camera.updateProjectionMatrix();   // FOV rộng hơn khi màn dọc
   stk.style.height = h + 'px'; stk.style.marginBottom = -h + 'px'; spc.style.height = (h * 7) + 'px';            // ruột cuộn khoảng 700vh
@@ -1910,16 +1958,16 @@ function resize() {
 function degrade() {
   const now = performance.now();
   if (Q.up && now - Q.up < 8000) { Q.max = Math.max(Q.pr - .15, Q.min); Q.up = 0; }          // vừa tăng đã tụt => khóa trần, khỏi dao động
-  if (Q.pr > Q.min + .01) { Q.pr = Math.max(Q.min, Q.pr - .15); applyPR(); }
+  if (Q.pr > Q.min + .01) { Q.pr = Math.max(Q.min, Q.pr - .2); applyPR(); }
   else if (bloom && bloom.enabled) bloom.enabled = false;
   else if (useComposer) useComposer = false;
 }
 function adapt(raw) {
   if (performance.now() < Q.warm) { Q.n = 0; Q.acc = 0; return; }                            // 5 giây đầu: khung hình chậm do nạp texture/biên dịch, không tính để khỏi tụt độ nét
   if (raw > 250) { Q.n = 0; Q.acc = 0; return; }                                              // vừa mở lại tab / bị treo: bỏ qua
-  Q.acc += raw; Q.n++; if (Q.n < 40) return;
+  Q.acc += raw; Q.n++; if (Q.n < 24) return;
   const avg = Q.acc / Q.n, now = performance.now(); Q.acc = 0; Q.n = 0;
-  if (avg > 25) { Q.good = 0; if (now - Q.t > 1200) { Q.t = now; degrade(); } }
+  if (avg > 25) { Q.good = 0; if (now - Q.t > 700) { Q.t = now; degrade(); } }
   else if (avg < 18.5) { if (++Q.good >= 3 && Q.pr < Q.max - .01 && now - Q.t > 3000) { Q.good = 0; Q.t = now; Q.up = now; Q.pr = Math.min(Q.max, Q.pr + .1); applyPR(); } }
   else Q.good = 0;
 }
@@ -2026,6 +2074,10 @@ const T0 = performance.now(), tlog = m => console.info('[9Sach] +' + Math.round(
 const tmo = (p, ms) => Promise.race([p, wait(ms).then(() => { throw new Error('quá ' + ms + 'ms'); })]);        // mọi bước tuỳ chọn đều có hạn chót, không bao giờ treo màn hình tải
 async function boot() {
   if (GLB_ON) GLBP = glbPrefetch();                                                                  // bắt đầu tải xe + trạm ngay, chạy song song với việc dựng cảnh
+  loadProductImages();                                                                               // V16: ảnh sản phẩm / poster tải ngay từ đầu, song song với mọi bước khác
+  const POSTP = LOW ? null : Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
+  if (POSTP) POSTP.catch(() => { });
+  import('three/addons/objects/Sky.js').catch(() => { }); import('three/addons/utils/BufferGeometryUtils.js').catch(() => { });   // V16: nạp trước các module phụ, đến bước dùng là có sẵn
   world = $('world'); scroller = $('scroller'); stk = $('stk'); spc = $('spc'); canvas = document.createElement('canvas'); $('wcv').appendChild(canvas);
   renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
@@ -2038,12 +2090,13 @@ async function boot() {
   const mgr = new THREE.LoadingManager(); const pct = $('wpct');
   mgr.onProgress = (u, l, t) => { pct.textContent = Math.round(l / t * 100) + '%'; $('wfill').style.width = (l / t * 100) + '%'; };
   const steps = ['font', 'logo', 'post', 'sky', 'plaza', 'facade', 'interior', 'objects', 'decor', 'start']; steps.forEach(s => mgr.itemStart(s));
-  const fin = async s => { mgr.itemEnd(s); tlog('xong bước ' + s); await wait(30); };
-  try { await Promise.race([document.fonts.load('700 40px "Be Vietnam Pro"'), wait(1500)]); } catch (e) { } await fin('font');
-  const logo = await Promise.race([new Promise(res => new THREE.ImageLoader(mgr).load('assets/logo.png', res, undefined, () => res(null))), wait(3000).then(() => null)]); await fin('logo');
+  const fin = async s => { mgr.itemEnd(s); tlog('xong bước ' + s); await wait(8); };
+  const fontP = Promise.race([(async () => { const t0 = performance.now(); while (!window.__gf && performance.now() - t0 < 1200) await wait(40); await document.fonts.load('700 40px "Be Vietnam Pro"'); })(), wait(1600)]).catch(() => { });   // V16: font (CSS Google Fonts nay tải không chặn trang: index.html đặt window.__gf khi xong) và logo tải cùng lúc
+  const logoP = Promise.race([new Promise(res => new THREE.ImageLoader(mgr).load('assets/logo.png', res, undefined, () => res(null))), wait(2000).then(() => null)]);
+  await fontP; await fin('font'); const logo = await logoP; await fin('logo');
   if (!LOW) {                                                                                      // bloom nhẹ, chỉ máy mạnh
     try {
-      const [a, b, c, d, e2] = await tmo(Promise.all([import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]), 5000);
+      const [a, b, c, d, e2] = await tmo(POSTP, 5000);
       composer = new a.EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 2 })); composer.addPass(new b.RenderPass(scene, camera));
       bloom = new c.UnrealBloomPass(new THREE.Vector2(256, 256), .28, .5, 1.3); composer.addPass(bloom); composer.addPass(new d.OutputPass());
       composer.addPass(film = new e2.ShaderPass({                                                         // tông phim: vignette nhẹ, tương phản mềm, ấm vàng ở vùng sáng
@@ -2056,7 +2109,7 @@ async function boot() {
   }
   await fin('post');
   stageSky(); await iblSky(); await fin('sky'); stagePlaza(); await fin('plaza'); stageFacade(logo); stageTiger(); await fin('facade'); stageInterior(); await fin('interior'); stageObjects(); await fin('objects');
-  await loadProductImages(); stageDecor(); await fin('decor');
+  await Promise.race([loadProductImages(), wait(2500)]); stageDecor(); await fin('decor');          // V16: chờ ảnh tối đa 2,5 giây (trước 8); ảnh về muộn sẽ tự thay vào poster
   if (V12_ON) {                                                                                      // V12: phố sống động + chi tiết gian hàng (mỗi phần bọc try/catch)
     try { BGU = await tmo(import('three/addons/utils/BufferGeometryUtils.js'), 5000); } catch (e) { BGU = null; console.warn('[9Sach] không nạp được BufferGeometryUtils, bỏ gộp mesh'); }
     safe('street', stageStreetPlus); safe('shop', stageShopPlus); safe('inside', stageInsidePlus); safe('bus', stageBus);
@@ -2082,15 +2135,18 @@ async function boot() {
   canvas.addEventListener('webglcontextlost', e => e.preventDefault());
   document.addEventListener('visibilitychange', sync); new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   fxInit(); windInit(); resize();
-  if (GLB_ON) { try { await Promise.race([glbStart(), wait(8000)]); } catch (e) { console.warn('[9Sach] glbStart lỗi:', e); } }   // xe + trạm có mặt ngay từ khung hình đầu (mạng chậm quá 7 giây thì vào cảnh trước, mô hình tự thế vào sau)
-  renderer.compile(scene, camera); fxWarmDone();
+  if (GLB_ON) { try { await Promise.race([glbStart(), wait(4500)]); } catch (e) { console.warn('[9Sach] glbStart lỗi:', e); } }   // V16: chờ tối đa 4,5 giây (trước 8); mạng chậm hơn thì vào cảnh trước, mô hình tự thế vào sau
+  if (GLB_ON && !STREET_DONE) OLDB.forEach(o => { o.visible = true; });                              // V16: nhà mới chưa về kịp => tạm hiện nhà cũ, đừng để phố trống; nhà mới về sẽ thay vào
+  tlog('bắt đầu biên dịch shader');
+  try { if (renderer.compileAsync) await tmo(renderer.compileAsync(scene, camera), 6000); else renderer.compile(scene, camera); } catch (e) { try { renderer.compile(scene, camera); } catch (e2) { } }   // V16: biên dịch song song, không khoá luồng chính
+  tlog('xong biên dịch shader'); fxWarmDone(); zoneInit();
   try { buildGate(); console.info('[9Sach] scene.js ' + API.version + ' — cổng Trẻ/Có tuổi đã dựng'); } catch (err) { console.error('[9Sach] buildGate lỗi:', err); }
   API.ready = true; sync();                                                                          // bật vòng lặp ngay để vẽ khung hình đầu tiên khi màn hình tải còn che
   await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), wait(900)]);   // chờ 2 khung hình thật được vẽ (tránh canvas đen lộ ra)
-  await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 5000; setTimeout(openGate, 350);
+  await fin('start'); $('wload').classList.add('hide'); Q.warm = performance.now() + 3000; setTimeout(openGate, 350);
 }
 
-API.version = 'v12.1';
+API.version = 'v16';
 API.start = function () { if (!API._p) API._p = boot().then(() => { API.ready = true; sync(); }); return API._p; };
 API.flyTo = function (id, cb) {                                                                    // camera bay tới vật thể rồi gọi cb
   const h = HOT[id]; if (!h || !API.ready) { if (cb) cb(); return; }
